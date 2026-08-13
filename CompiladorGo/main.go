@@ -8,16 +8,56 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 
 func main(){
 	
-	
+	//variavel pra acumular o resultado
 	resultado := 0;
+    
+	//variavel para guardar a entrada no terminal
+	operacao := os.Args[1];
+	
+	//slice para guardar os componentes da conta enquanto os montamos 
+	var lista_operacoes []string
 
-	// os.Args[1] pega a operacao
-	lista_operacoes := strings.Split(os.Args[1], " ")
+	//variavel temporaria para concatenar os numeros e operadores
+	var temp strings.Builder
+
+	for _, char := range operacao{
+		if unicode.IsSpace(char){
+			// se o espaco for depois de uma estrutura ja formada quer dizer que o elemento anterior
+			// acabou ent podemos adicionalo a lista
+			if temp.Len() > 0{
+				lista_operacoes = append(lista_operacoes, temp.String())
+				temp.Reset()
+			}
+			continue
+			
+		}
+
+		//se for operador tambem encerramos a temp
+		if char == '+' || char == '-' {
+			if temp.Len() > 0{
+				lista_operacoes = append(lista_operacoes, temp.String())
+				temp.Reset()
+			}
+			lista_operacoes = append(lista_operacoes, string(char))	
+
+			continue
+		}
+		// se for digito adicionamos a temp e seguimos
+
+		if unicode.IsDigit(char){
+			temp.WriteRune(char)
+		}
+	
+	}
+
+
+	
 
 	// criamos o slice que vai guardar as tres operacoes 
 	var operacoes []string
