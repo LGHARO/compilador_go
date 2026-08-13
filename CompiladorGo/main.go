@@ -56,6 +56,11 @@ func main(){
 	
 	}
 
+	//se sobrar algo no temp
+	if temp.Len() > 0 {
+		lista_operacoes = append(lista_operacoes, temp.String())
+	}
+
 
 	
 
