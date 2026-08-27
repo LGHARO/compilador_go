@@ -45,6 +45,14 @@ func (le *Lexer) selectNext() {
 			return
 		}
 
+		// Se o caractere é igual a '^'
+		if char == '^' {
+			le.next = Token{tipo: "XOR", value: "^"}
+			le.position++
+			return
+		}
+		
+
 		// Se o caractere é igual a '-'
 		if char == '-' {
 			le.next = Token{tipo: "MINUS", value: "-"}
@@ -89,7 +97,7 @@ func ParseExpression(lexer *Lexer) int {
 	resultado := num
 	lexer.selectNext()
 
-	for lexer.next.tipo == "PLUS" || lexer.next.tipo == "MINUS" {
+	for lexer.next.tipo == "PLUS" || lexer.next.tipo == "MINUS" || lexer.next.tipo == "XOR"{
 		operador := lexer.next.tipo
 		lexer.selectNext()
 
@@ -104,8 +112,16 @@ func ParseExpression(lexer *Lexer) int {
 
 		if operador == "PLUS" {
 			resultado += numero
-		} else {
+		}
+		if operador == "MINUS" {
 			resultado -= numero
+		}
+		if operador == "XOR"{
+			if resultado == numero{
+				resultado = 0
+			}else{
+				resultado = 1
+			}
 		}
 
 		lexer.selectNext()
