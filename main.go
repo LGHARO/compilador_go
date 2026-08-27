@@ -77,47 +77,47 @@ type Parser struct{
 }
 
 func ParseExpression(lexer *Lexer) int {
-	// Se o next token não é um número, ERRO
 	if lexer.next.tipo != "INT" {
-		panic("[PARSER]")
+		panic("[PARSER] esperava um número")
 	}
 
-	// Resultado recebe o valor do next token INT (fazendo type assertion de 'any' para 'int')
-	num, _ := strconv.Atoi(lexer.next.value)
-	resultado := num
+	num, err := strconv.Atoi(lexer.next.value)
+	if err != nil {
+		panic("[PARSER] número inválido")
+	}
 
-	// Posicione no próximo token
+	resultado := num
 	lexer.selectNext()
 
-	// Enquanto o next token for PLUS ou MINUS
 	for lexer.next.tipo == "PLUS" || lexer.next.tipo == "MINUS" {
 		operador := lexer.next.tipo
-
-		// Posicione no próximo token
 		lexer.selectNext()
 
-		// Se o next token não é um número, ERRO
 		if lexer.next.tipo != "INT" {
-			panic("[PARSER]")
+			panic("[PARSER] esperava um número depois do operador")
 		}
 
-		numero, _ := strconv.Atoi(lexer.next.value)
+		numero, err := strconv.Atoi(lexer.next.value)
+		if err != nil {
+			panic("[PARSER] número inválido")
+		}
 
-		// Atualize o resultado conforme a operação indicada
 		if operador == "PLUS" {
 			resultado += numero
-		} else if operador == "MINUS" {
+		} else {
 			resultado -= numero
 		}
 
-		// Posicione no próximo token
 		lexer.selectNext()
 	}
 
-	// Retorne o resultado
+	// se sobrou da erro
+	if lexer.next.tipo != "EOF" {
+		panic("[PARSER] token inesperado: " + lexer.next.value)
+	}
+
 	return resultado
 }
-
 
 
 func(p *Parser) run() int{
