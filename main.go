@@ -7,139 +7,146 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"strings"
 	"unicode"
 )
 
+type Token struct{
+	tipo string
+	value string
+}
+
+type Lexer struct{
+	source string
+	position int
+	next Token
+}
+
+
+func (le *Lexer) selectNext() {
+	
+	// percorre ate nn ser mais espaco em branco ou acabar as informacoes
+	for le.position < len(le.source) && unicode.IsSpace(rune(le.source[le.position])) {
+		le.position++
+	}
+
+	// se for fim adiciona o token
+	if le.position >= len(le.source) {
+			le.next = Token{tipo: "EOF", value: ""}
+			return
+		}
+
+		// Caractere atual
+		char := le.source[le.position]
+
+		// Se o caractere é igual a '+'
+		if char == '+' {
+			le.next = Token{tipo: "PLUS", value: "+"}
+			le.position++
+			return
+		}
+
+		// Se o caractere é igual a '-'
+		if char == '-' {
+			le.next = Token{tipo: "MINUS", value: "-"}
+			le.position++
+			return
+		}
+
+		// se for digito
+		if unicode.IsDigit(rune(char)){
+
+			startPos := le.position
+			for le.position < len(le.source) && unicode.IsDigit(rune(le.source[le.position])){
+				le.position++
+			}
+
+			numStr := le.source[startPos:le.position]
+
+			le.next = Token{tipo: "INT", value: numStr}
+
+			return
+
+		}
+
+		panic("[Lexer] digito nn valido")
+
+}
+
+type Parser struct{
+	lexer Lexer
+}
+
+func ParseExpression(lexer *Lexer) int {
+	// Se o next token não é um número, ERRO
+	if lexer.next.tipo != "INT" {
+		panic("[PARSER]")
+	}
+
+	// Resultado recebe o valor do next token INT (fazendo type assertion de 'any' para 'int')
+	num, _ := strconv.Atoi(lexer.next.value)
+	resultado := num
+
+	// Posicione no próximo token
+	lexer.selectNext()
+
+	// Enquanto o next token for PLUS ou MINUS
+	for lexer.next.tipo == "PLUS" || lexer.next.tipo == "MINUS" {
+		operador := lexer.next.tipo
+
+		// Posicione no próximo token
+		lexer.selectNext()
+
+		// Se o next token não é um número, ERRO
+		if lexer.next.tipo != "INT" {
+			panic("[PARSER]")
+		}
+
+		numero, _ := strconv.Atoi(lexer.next.value)
+
+		// Atualize o resultado conforme a operação indicada
+		if operador == "PLUS" {
+			resultado += numero
+		} else if operador == "MINUS" {
+			resultado -= numero
+		}
+
+		// Posicione no próximo token
+		lexer.selectNext()
+	}
+
+	// Retorne o resultado
+	return resultado
+}
+
+
+
+func(p *Parser) run() int{
+	// add o primeiro next
+	p.lexer.selectNext()
+
+	// le a expressao
+	resultado := ParseExpression(&p.lexer)
+
+
+	return resultado
+}
+
+
+
+
 func main() {
 
-	//variavel pra acumular o resultado
-	resultado := 0
+	source := os.Args[1]
 
-	//variavel para guardar a entrada no terminal
-	operacao := os.Args[1]
-
-	//slice para guardar os componentes da conta enquanto os montamos
-	var lista_operacoes []string
-
-	//variavel temporaria para concatenar os numeros e operadores
-	var temp strings.Builder
-
-	//barra array vazio
-	if len(operacao) == 0 {
-		panic("")
+	l := &Lexer{
+		source: source,
+		position: 0,
 	}
 
-	for _, char := range operacao {
-		if unicode.IsSpace(char) {
-			// se o espaco for depois de uma estrutura ja formada quer dizer que o elemento anterior
-			// acabou ent podemos adicionalo a lista
-			if temp.Len() > 0 {
-				lista_operacoes = append(lista_operacoes, temp.String())
-				temp.Reset()
-			}
-			continue
-
-		}
-
-		//se for operador tambem encerramos a temp
-		if char == '+' || char == '-' {
-			if temp.Len() > 0 {
-				lista_operacoes = append(lista_operacoes, temp.String())
-				temp.Reset()
-			}
-			lista_operacoes = append(lista_operacoes, string(char))
-
-			continue
-		}
-		// se for digito adicionamos a temp e seguimos
-
-		if unicode.IsDigit(char) {
-			temp.WriteRune(char)
-
-			continue
-		}
-
-		//retorna erro se nn for nenhum dos casos
-		panic("")
-
+	p := &Parser{
+		lexer: *l,
 	}
 
-	//se sobrar algo no temp
-	if temp.Len() > 0 {
-		lista_operacoes = append(lista_operacoes, temp.String())
-	}
 
-	// criamos o slice que vai guardar as tres operacoes
-	var operacoes []string
-
-	for i := 0; i < len(lista_operacoes) || len(operacoes) == 3; {
-		// array completo
-
-		if len(operacoes) == 3 {
-
-			if operacoes[1] == "-" {
-
-				num1, _ := strconv.Atoi(operacoes[0])
-				num2, _ := strconv.Atoi(operacoes[2])
-
-				//calculamos o resultado
-				resultado = num1 - num2
-
-				// redimencionamos o slice para que volte a ter apenas um elemento
-				operacoes = operacoes[:0]
-
-				operacoes = append(operacoes, strconv.Itoa(resultado))
-
-			} else if operacoes[1] == "+" {
-
-				num1, _ := strconv.Atoi(operacoes[0])
-				num2, _ := strconv.Atoi(operacoes[2])
-				//calculamos o resultado
-				resultado = num1 + num2
-
-				// redimencionamos o slice para que volte a ter apenas um elemento
-				operacoes = operacoes[:0]
-
-				operacoes = append(operacoes, strconv.Itoa(resultado))
-			}
-
-			// array faltando o ultimo numero
-		} else if len(operacoes) == 2 {
-			if lista_operacoes[i] == "+" || lista_operacoes[i] == "-" {
-				panic("")
-			} else {
-				operacoes = append(operacoes, lista_operacoes[i])
-			}
-			i++
-			// array faltando o operador
-		} else if len(operacoes) == 1 {
-
-			if lista_operacoes[i] == "+" {
-				operacoes = append(operacoes, lista_operacoes[i])
-			} else if lista_operacoes[i] == "-" {
-				operacoes = append(operacoes, lista_operacoes[i])
-			} else {
-				panic("")
-			}
-			i++
-			// adicao primeiro numero
-		} else if len(operacoes) == 0 {
-			if lista_operacoes[i] == "+" || lista_operacoes[i] == "-" {
-				panic("")
-			} else {
-				operacoes = append(operacoes, lista_operacoes[i])
-			}
-			i++
-		}
-
-	}
-
-	
-	if len(operacoes) > 1 {
-		panic("")
-	}
-	
-	fmt.Println(resultado)
-
+	fmt.Println(p.run())
 }
