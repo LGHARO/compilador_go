@@ -117,11 +117,7 @@ func ParseExpression(lexer *Lexer) int {
 			resultado -= numero
 		}
 		if operador == "XOR"{
-			if resultado == numero{
-				resultado = 0
-			}else{
-				resultado = 1
-			}
+			resultado = resultado ^ numero
 		}
 
 		lexer.selectNext()
