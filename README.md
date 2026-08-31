@@ -1,15 +1,10 @@
-# compilador-ling-par
+# compilador_go
 
-[![Compilation Status](https://compiler-tester.insper-comp.com.br/svg/emilybrtt/compilador-ling-par)](https://compiler-tester.insper-comp.com.br/svg/emilybrtt/compilador-ling-par)
+[![Compilation Status](https://compiler-tester.insper-comp.com.br/svg/LGHARO/compilador_go)](https://compiler-tester.insper-comp.com.br/svg/LGHARO/compilador_go)
+
+![Diagrama Sintático](https://compiler-tester.insper-comp.com.br/ds?version=v1.1)
 
 This repository is monitored by Compiler Tester for automatic compilation status.
-
-Comando pra rodar: 
-```bash
-go run main.go [argumento]
-```
-
-## EBNF
 
 ```ebnf
 EXPRESSION = TERM, { ("+" | "-"), TERM } ;
@@ -18,5 +13,3 @@ FACTOR = NUMBER | ("+" | "-"), FACTOR | "(", EXPRESSION, ")" ;
 NUMBER = DIGIT, { DIGIT } ;
 DIGIT = "0" | "1" | ... | "9" ;
 ```
-
-![Diagrama Sintático](https://compiler-tester.insper-comp.com.br/ds?version=v1.1)
