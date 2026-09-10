@@ -49,7 +49,11 @@ func (binOp *BinOp) Evaluate() int {
 	} else if binOp.value == "*" {
 		return binOp.childrenLeft.Evaluate() * binOp.childrenRight.Evaluate()
 	} else if binOp.value == "/" {
-		return binOp.childrenLeft.Evaluate() / binOp.childrenRight.Evaluate()
+		divisor := binOp.childrenRight.Evaluate()
+        if divisor == 0 {
+            panic("[Semantic] divisão por zero")
+        }
+        return binOp.childrenLeft.Evaluate() / divisor
 	} else {
 		panic("[Semantic] erro em bin op")
 	}
