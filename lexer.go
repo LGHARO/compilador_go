@@ -68,6 +68,22 @@ func (le *Lexer) selectNext() {
 		return
 	}
 
+	// Se o caractere é igual a '='
+	if char == '=' {
+		le.next = Token{tipo: "ASSIGN", value: "="}
+		le.position++
+		return
+	}
+
+	// Se o caractere é igual a '\n'
+	if char == '\n' {
+		le.next = Token{tipo: "END", value: "\n"}
+		le.position++
+		return
+	}
+
+	
+
 	// se for digito
 	if unicode.IsDigit(rune(char)) {
 
@@ -80,6 +96,24 @@ func (le *Lexer) selectNext() {
 
 		le.next = Token{tipo: "INT", value: numStr}
 
+		return
+	}
+
+	if unicode.IsLetter(rune(char)) {
+		
+		startPos := le.position
+
+		for le.position < len(le.source) && (unicode.IsDigit(rune(le.source[le.position])) || unicode.IsLetter(rune(le.source[le.position])) || le.source[le.position] == '_') {
+			le.position++
+		}
+
+		idenStr := le.source[startPos:le.position]
+
+		if idenStr == "Println" {
+			le.next = Token{tipo: "PRINT", value: idenStr}
+		}else{
+			le.next = Token{tipo: "IDEN", value: idenStr}
+		}
 		return
 	}
 

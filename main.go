@@ -1,16 +1,21 @@
 package main
 
 import (
-	"fmt"
 	"os"
 )
 
 func main() {
 
-	source := os.Args[1]
+	caminho_arquivo := os.Args[1]
+
+	dados,_ := os.ReadFile(caminho_arquivo)
+	filter := &Prepro{
+
+	}
+	dados_filtrados := filter.filter(string(dados))
 
 	l := &Lexer{
-		source:   source,
+		source:   dados_filtrados,
 		position: 0,
 	}
 
@@ -18,5 +23,11 @@ func main() {
 		lexer: *l,
 	}
 
-	fmt.Println(p.run())
+	//montamos a ast
+	AST := p.run()
+
+	st := &SymbolTable{
+		table: make(map[string]Variable),
+	}
+	AST.Evaluate(*st)
 }
