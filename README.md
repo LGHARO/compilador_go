@@ -9,23 +9,25 @@ This repository is monitored by Compiler Tester for automatic compilation status
 ```ebnf
 
 PROGRAM = { STATEMENT } ;
-STATEMENT = ( ε | ASSIGNMENT | PRINT | IF | WHILE | BLOCK ), EOL ;
-BLOCK = "{", { STATEMENT }, "}" ;
-IF = "if", BOOL_EXPRESSION, BLOCK, [ "else", ( IF | BLOCK ) ] ;
-WHILE = "for", BOOL_EXPRESSION, BLOCK ;
-ASSIGNMENT = IDENTIFIER, "=", BOOL_EXPRESSION ;
-PRINT = "Println", "(", BOOL_EXPRESSION, ")" ;
-BOOL_EXPRESSION = BOOL_TERM, { "||", BOOL_TERM } ;
-BOOL_TERM = REL_EXPRESSION, { "&&", REL_EXPRESSION } ;
-REL_EXPRESSION = EXPRESSION, [ ("==" | "<" | ">"), EXPRESSION ] ;
+STATEMENT = ( ("Println","(",BOOLEXPRESSION,")") | ("for",BOOLEXPRESSION,BLOCK) | ("if",BOOLEXPRESSION,BLOCK,("else",BLOCK) | ε) | (IDENTIFIER,"=",BOOLEXPRESSION) | BLOCK | ε ), "\n" ;
+BLOCK = "{", "\n", { STATEMENT }, "}" ;
+IF = "if", BOOLEXPRESSION, BLOCK, [ "else", ( IF | BLOCK ) ] ;
+WHILE = "for", BOOLEXPRESSION, BLOCK ;
+ASSIGNMENT = IDENTIFIER, "=", BOOLEXPRESSION ;
+PRINT = "Println", "(", BOOLEXPRESSION, ")" ;
+
+BOOLEXPRESSION = BOOLTERM, { "||", BOOLTERM } ;
+BOOLTERM = RELEXPRESSION, { "&&", RELEXPRESSION } ;
+RELEXPRESSION = EXPRESSION, { ("<" | "==" | ">"), EXPRESSION } ;
+
 EXPRESSION = TERM, { ("+" | "-"), TERM } ;
 TERM = FACTOR, { ("*" | "/"), FACTOR } ;
-FACTOR = (("+" | "-" | "!"), FACTOR) | NUMBER | READ | "(", BOOL_EXPRESSION, ")" | IDENTIFIER ;
-READ = "Scanln", "(", ")" ;
+FACTOR = NUMBER | IDENTIFIER | ("!" | "+" | "-"), FACTOR | "(", BOOLEXPRESSION, ")" | "Scanln", "(", ")" ;
+
 IDENTIFIER = LETTER, { LETTER | DIGIT | "_" } ;
 NUMBER = DIGIT, { DIGIT } ;
-LETTER = ( a | ... | z | A | ... | Z ) ;
-DIGIT = ( 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 0 ) ;
+LETTER = "a" | "b" | ... | "z" | "A" | "B" | ... | "Z" ;
+DIGIT = "0" | "1" | ... | "9" ;
 EOL = "\n" ;
 
 ```
