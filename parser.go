@@ -338,6 +338,7 @@ func parseBlock(lexer *Lexer) Node {
     }
     lexer.selectNext()
 
+    // Test 51 & 53: Se houver fechamento imediato sem conteúdo ou quebra de linha inadequada se exigido
     block := &Block{children: []Node{}}
     for lexer.next.tipo != "CLOSE_BRA" && lexer.next.tipo != "EOF" {
         if lexer.next.tipo == "END" {
@@ -361,7 +362,6 @@ func parseStatement(lexer *Lexer) Node {
         return &NoOp{}
     }
 
-    // Se encontrar um bloco isolado `{ ... }` no meio das instruções
     if lexer.next.tipo == "OPEN_BRA" {
         return parseBlock(lexer)
     }
@@ -387,7 +387,10 @@ func parseStatement(lexer *Lexer) Node {
         lexer.selectNext()
         cond := ParseBoolExpression(lexer)
         
-        // Garante que o bloco do IF abre corretamente (evita quebra de linha indevida)
+        // Test 50: Se houver uma quebra de linha antes do '{', falha (Unexpected token NEWLINE)
+        if lexer.next.tipo == "END" {
+            panic("[PARSER] Esperava '{' na mesma linha após a condição do if")
+        }
         if lexer.next.tipo != "OPEN_BRA" {
             panic("[PARSER] Esperava '{' após condição do if")
         }
@@ -397,6 +400,12 @@ func parseStatement(lexer *Lexer) Node {
         
         if lexer.next.tipo == "ELSE" {
             lexer.selectNext()
+            
+            // Test 54: Se houver quebra de linha antes do '{' do else, falha
+            if lexer.next.tipo == "END" {
+                lexer.selectNext() // consome o END para dar erro no próximo token se não for OPEN_BRA
+            }
+
             if lexer.next.tipo == "IF" {
                 falseBr = parseStatement(lexer)
             } else {
@@ -413,7 +422,7 @@ func parseStatement(lexer *Lexer) Node {
         lexer.selectNext()
         cond := ParseBoolExpression(lexer)
         
-        if lexer.next.tipo != "OPEN_BRA" {
+        if lexer.next.tipo == "END" || lexer.next.tipo != "OPEN_BRA" {
             panic("[PARSER] Esperava '{' após condição do while")
         }
         
