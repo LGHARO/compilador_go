@@ -9,16 +9,25 @@ This repository is monitored by Compiler Tester for automatic compilation status
 ```ebnf
 
 PROGRAM = { STATEMENT } ;
-STATEMENT = ( ε | ASSIGNMENT | PRINT), EOL ;
-ASSIGNMENT = IDENTIFIER, "=", EXPRESSION ;
-PRINT = "Println", "(", EXPRESSION, ")" ;
+STATEMENT = ( ("Println","(",BOOLEXPRESSION,")") | ("for",BOOLEXPRESSION,BLOCK) | ("if",BOOLEXPRESSION,BLOCK,("else",BLOCK) | ε) | (IDENTIFIER,"=",BOOLEXPRESSION) | BLOCK | ε ), "\n" ;
+BLOCK = "{", "\n", { STATEMENT }, "}" ;
+IF = "if", BOOLEXPRESSION, BLOCK, [ "else", ( IF | BLOCK ) ] ;
+WHILE = "for", BOOLEXPRESSION, BLOCK ;
+ASSIGNMENT = IDENTIFIER, "=", BOOLEXPRESSION ;
+PRINT = "Println", "(", BOOLEXPRESSION, ")" ;
+
+BOOLEXPRESSION = BOOLTERM, { "||", BOOLTERM } ;
+BOOLTERM = RELEXPRESSION, { "&&", RELEXPRESSION } ;
+RELEXPRESSION = EXPRESSION, [ ("==" | "<" | ">"), EXPRESSION ] ;
+
 EXPRESSION = TERM, { ("+" | "-"), TERM } ;
 TERM = FACTOR, { ("*" | "/"), FACTOR } ;
-FACTOR = (("+" | "-"), FACTOR) | NUMBER | "(", EXPRESSION, ")" | IDENTIFIER ;
+FACTOR = NUMBER | IDENTIFIER | ("!" | "+" | "-"), FACTOR | "(", BOOLEXPRESSION, ")" | "Scanln", "(", ")" ;
+
 IDENTIFIER = LETTER, { LETTER | DIGIT | "_" } ;
 NUMBER = DIGIT, { DIGIT } ;
-LETTER = ( a | ... | z | A | ... | Z ) ;
-DIGIT = ( 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 0 ) ;
+LETTER = "a" | "b" | ... | "z" | "A" | "B" | ... | "Z" ;
+DIGIT = "0" | "1" | ... | "9" ;
 EOL = "\n" ;
 
 ```
