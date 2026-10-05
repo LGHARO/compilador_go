@@ -18,7 +18,7 @@ PRINT = "Println", "(", BOOLEXPRESSION, ")" ;
 
 BOOLEXPRESSION = BOOLTERM, { "||", BOOLTERM } ;
 BOOLTERM = RELEXPRESSION, { "&&", RELEXPRESSION } ;
-RELEXPRESSION = EXPRESSION, [ ("==" | "<" | ">"), EXPRESSION ] ;
+RELEXPRESSION = EXPRESSION, { ("<" | "==" | ">"), EXPRESSION } ;
 
 EXPRESSION = TERM, { ("+" | "-"), TERM } ;
 TERM = FACTOR, { ("*" | "/"), FACTOR } ;
