@@ -338,7 +338,11 @@ func parseBlock(lexer *Lexer) Node {
     }
     lexer.selectNext()
 
-    // Test 51 & 53: Se houver fechamento imediato sem conteúdo ou quebra de linha inadequada se exigido
+    // Test 51 & 53: '}' na mesma linha que '{' é inválido
+    if lexer.next.tipo == "CLOSE_BRA" {
+        panic("[PARSER] Unexpected token CLOSE_BRA: '}' não pode estar na mesma linha que '{'")
+    }
+
     block := &Block{children: []Node{}}
     for lexer.next.tipo != "CLOSE_BRA" && lexer.next.tipo != "EOF" {
         if lexer.next.tipo == "END" {
@@ -397,13 +401,15 @@ func parseStatement(lexer *Lexer) Node {
         
         trueBr := parseBlock(lexer)
         var falseBr Node = nil
-        
+
+        // Test 52: 'else' deve estar na mesma linha que '}' (sem END entre eles)
+        // Se o próximo token for END, não procuramos por ELSE — eles estão em linhas diferentes.
         if lexer.next.tipo == "ELSE" {
             lexer.selectNext()
-            
-            // Test 54: Se houver quebra de linha antes do '{' do else, falha
+
+            // Test 54: '{' deve estar na mesma linha que 'else' (sem END entre eles)
             if lexer.next.tipo == "END" {
-                lexer.selectNext() // consome o END para dar erro no próximo token se não for OPEN_BRA
+                panic("[PARSER] Unexpected token NEWLINE: esperava '{' na mesma linha após else")
             }
 
             if lexer.next.tipo == "IF" {

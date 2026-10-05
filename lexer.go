@@ -11,7 +11,8 @@ type Lexer struct {
 }
 
 func (le *Lexer) selectNext() {
-	for le.position < len(le.source) && unicode.IsSpace(rune(le.source[le.position])) {
+	// Pula espaços e tabs, mas NÃO pula '\n' (que é um token END significativo)
+	for le.position < len(le.source) && (le.source[le.position] == ' ' || le.source[le.position] == '\t' || le.source[le.position] == '\r') {
 		le.position++
 	}
 
