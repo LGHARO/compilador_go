@@ -361,6 +361,11 @@ func parseStatement(lexer *Lexer) Node {
         return &NoOp{}
     }
 
+    // Se encontrar um bloco isolado `{ ... }` no meio das instruções
+    if lexer.next.tipo == "OPEN_BRA" {
+        return parseBlock(lexer)
+    }
+
     if lexer.next.tipo == "PRINT" {
         lexer.selectNext()
         if lexer.next.tipo != "OPEN_PAR" {
@@ -381,13 +386,23 @@ func parseStatement(lexer *Lexer) Node {
     if lexer.next.tipo == "IF" {
         lexer.selectNext()
         cond := ParseBoolExpression(lexer)
+        
+        // Garante que o bloco do IF abre corretamente (evita quebra de linha indevida)
+        if lexer.next.tipo != "OPEN_BRA" {
+            panic("[PARSER] Esperava '{' após condição do if")
+        }
+        
         trueBr := parseBlock(lexer)
         var falseBr Node = nil
+        
         if lexer.next.tipo == "ELSE" {
             lexer.selectNext()
             if lexer.next.tipo == "IF" {
                 falseBr = parseStatement(lexer)
             } else {
+                if lexer.next.tipo != "OPEN_BRA" {
+                    panic("[PARSER] Esperava '{' após else")
+                }
                 falseBr = parseBlock(lexer)
             }
         }
@@ -397,6 +412,11 @@ func parseStatement(lexer *Lexer) Node {
     if lexer.next.tipo == "WHILE" {
         lexer.selectNext()
         cond := ParseBoolExpression(lexer)
+        
+        if lexer.next.tipo != "OPEN_BRA" {
+            panic("[PARSER] Esperava '{' após condição do while")
+        }
+        
         blk := parseBlock(lexer)
         return &While{condition: cond, block: blk}
     }
@@ -432,6 +452,11 @@ func parseProgram(lexer *Lexer) *Block {
     for lexer.next.tipo != "EOF" {
         if lexer.next.tipo == "END" {
             lexer.selectNext()
+            continue
+        }
+        // Se o programa começar direto com um bloco `{` (como no Test 1)
+        if lexer.next.tipo == "OPEN_BRA" {
+            block.children = append(block.children, parseBlock(lexer))
             continue
         }
         stmt := parseStatement(lexer)
