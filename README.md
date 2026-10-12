@@ -9,9 +9,8 @@ This repository is monitored by Compiler Tester for automatic compilation status
 ```ebnf
 
 PROGRAM = { STATEMENT } ;
-STATEMENT = ( VARDEC | ("Println","(",BOOLEXPRESSION,")") | ("for",BOOLEXPRESSION,BLOCK) | ("if",BOOLEXPRESSION,BLOCK,("else",( IF | BLOCK )) | ε) | (IDENTIFIER,"=",BOOLEXPRESSION) | BLOCK | ε ), "\n" ;
+STATEMENT = ("var",IDENTIFIER,TYPE,(Ε|"=",BOOLEXPRESSION)|("Println","(",BOOLEXPRESSION,")")|("for",BOOLEXPRESSION,BLOCK)|("if",BOOLEXPRESSION,BLOCK,(Ε|"else",BLOCK)|)|BLOCK|IDENTIFIER,"=",BOOLEXPRESSION|Ε),"\n" ;
 BLOCK = "{", "\n", { STATEMENT }, "}" ;
-VARDEC = "var", IDENTIFIER, TYPE, ["=", BOOLEXPRESSION] ;
 IF = "if", BOOLEXPRESSION, BLOCK, [ "else", ( IF | BLOCK ) ] ;
 WHILE = "for", BOOLEXPRESSION, BLOCK ;
 ASSIGNMENT = IDENTIFIER, "=", BOOLEXPRESSION ;
@@ -23,13 +22,13 @@ RELEXPRESSION = EXPRESSION, { ("<" | "==" | ">"), EXPRESSION } ;
 
 EXPRESSION = TERM, { ("+" | "-"), TERM } ;
 TERM = FACTOR, { ("*" | "/"), FACTOR } ;
-FACTOR = NUMBER | STRING | BOOLEAN | IDENTIFIER | ("!" | "+" | "-"), FACTOR | "(", BOOLEXPRESSION, ")" | "Scanln", "(", ")" | "ScanlnStr", "(", ")" ;
+FACTOR = NUMBER|BOOLEAN|STRING|IDENTIFIER|("!"|"+"|"-"),FACTOR|"(",BOOLEXPRESSION,")"|"Scanln","(",")" ;
 
 IDENTIFIER = LETTER, { LETTER | DIGIT | "_" } ;
 NUMBER = DIGIT, { DIGIT } ;
-STRING = '"', { ... }, '"' ;
+STRING = '"', {"..."}, '"' ;
 BOOLEAN = "true" | "false" ;
-TYPE = "int" | "string" | "bool" ;
+TYPE = "string" | "int" | "bool" ;
 LETTER = "a" | "b" | ... | "z" | "A" | "B" | ... | "Z" ;
 DIGIT = "0" | "1" | ... | "9" ;
 EOL = "\n" ;
