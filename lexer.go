@@ -124,6 +124,22 @@ func (le *Lexer) selectNext() {
 		return
 	}
 
+	// Literal string: tudo entre aspas duplas
+	if char == '"' {
+		le.position++ // pula a aspas de abertura
+		startPos := le.position
+		for le.position < len(le.source) && le.source[le.position] != '"' && le.source[le.position] != '\n' {
+			le.position++
+		}
+		if le.position >= len(le.source) || le.source[le.position] != '"' {
+			panic("[Lexer] string não fechada")
+		}
+		strContent := le.source[startPos:le.position]
+		le.position++ // pula a aspas de fechamento
+		le.next = Token{tipo: "STR", value: strContent}
+		return
+	}
+
 	if unicode.IsDigit(rune(char)) {
 		startPos := le.position
 		for le.position < len(le.source) && unicode.IsDigit(rune(le.source[le.position])) {
@@ -152,6 +168,14 @@ func (le *Lexer) selectNext() {
 			le.next = Token{tipo: "WHILE", value: idenStr}
 		case "Scanln":
 			le.next = Token{tipo: "READ", value: idenStr}
+		case "ScanlnStr":
+			le.next = Token{tipo: "READ_STR", value: idenStr}
+		case "var":
+			le.next = Token{tipo: "VAR", value: idenStr}
+		case "true", "false":
+			le.next = Token{tipo: "BOOL", value: idenStr}
+		case "string", "int", "bool":
+			le.next = Token{tipo: "TYPE", value: idenStr}
 		default:
 			le.next = Token{tipo: "IDEN", value: idenStr}
 		}

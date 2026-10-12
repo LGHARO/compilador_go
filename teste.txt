@@ -1,15 +1,15 @@
-// Programa de Testes Completo
-n = Scanln()
-f = 1
-i = 1
+// Programa de Testes Completo - atualizado para suporte a tipos
+var n int = Scanln()
+var f int = 1
+var i int = 1
 
 if n < 2 && !(n == 0) {
-    f = 1
+f = 1
 } else {
-    for i < n || i == n {
-        f = f * i
-        i = i + 1
-    }
+for i < n || i == n {
+f = f * i
+i = i + 1
+}
 }
 
 Println(f)
