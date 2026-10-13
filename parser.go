@@ -73,20 +73,13 @@ func (n *UnOp) Evaluate(st SymbolTable) Variable {
 		}
 		return Variable{value: -child.value.(int), varType: "int"}
 	case "!":
-		if child.varType != "bool" && child.varType != "int" {
-			panic("[Semantic] operador '!' requer bool ou int, recebeu " + child.varType)
+		if child.varType != "bool" {
+			panic("[Semantic] operador '!' requer bool, recebeu " + child.varType)
 		}
-		if child.varType == "bool" {
-			if child.value.(int) == 0 {
-				return Variable{value: 1, varType: "bool"}
-			}
-			return Variable{value: 0, varType: "bool"}
-		}
-		// int
 		if child.value.(int) == 0 {
-			return Variable{value: 1, varType: "int"}
+			return Variable{value: 1, varType: "bool"}
 		}
-		return Variable{value: 0, varType: "int"}
+		return Variable{value: 0, varType: "bool"}
 	}
 	panic("[Semantic] operador unário inválido: " + n.value)
 }
@@ -106,36 +99,34 @@ func (n *BinOp) Evaluate(st SymbolTable) Variable {
 
 	// Short-circuit para && e ||
 	if n.value == "&&" {
-		if left.varType != "bool" && left.varType != "int" {
-			panic("[Semantic] '&&' requer bool ou int nos operandos")
+		if left.varType != "bool" {
+			panic("[Semantic] '&&' requer bool nos operandos; recebeu " + left.varType)
 		}
-		leftInt := toInt(left)
-		if leftInt == 0 {
+		if left.value.(int) == 0 {
 			return Variable{value: 0, varType: "bool"}
 		}
 		right := n.childrenRight.Evaluate(st)
-		if right.varType != "bool" && right.varType != "int" {
-			panic("[Semantic] '&&' requer bool ou int nos operandos")
+		if right.varType != "bool" {
+			panic("[Semantic] '&&' requer bool nos operandos; recebeu " + right.varType)
 		}
-		if toInt(right) != 0 {
+		if right.value.(int) != 0 {
 			return Variable{value: 1, varType: "bool"}
 		}
 		return Variable{value: 0, varType: "bool"}
 	}
 
 	if n.value == "||" {
-		if left.varType != "bool" && left.varType != "int" {
-			panic("[Semantic] '||' requer bool ou int nos operandos")
+		if left.varType != "bool" {
+			panic("[Semantic] '||' requer bool nos operandos; recebeu " + left.varType)
 		}
-		leftInt := toInt(left)
-		if leftInt != 0 {
+		if left.value.(int) != 0 {
 			return Variable{value: 1, varType: "bool"}
 		}
 		right := n.childrenRight.Evaluate(st)
-		if right.varType != "bool" && right.varType != "int" {
-			panic("[Semantic] '||' requer bool ou int nos operandos")
+		if right.varType != "bool" {
+			panic("[Semantic] '||' requer bool nos operandos; recebeu " + right.varType)
 		}
-		if toInt(right) != 0 {
+		if right.value.(int) != 0 {
 			return Variable{value: 1, varType: "bool"}
 		}
 		return Variable{value: 0, varType: "bool"}
@@ -145,14 +136,15 @@ func (n *BinOp) Evaluate(st SymbolTable) Variable {
 
 	switch n.value {
 	case "+":
-		// Concatenação de strings ou soma de ints
-		if left.varType == "string" && right.varType == "string" {
-			return Variable{value: left.value.(string) + right.value.(string), varType: "string"}
+		// Se pelo menos um operando for string, converte o outro e concatena
+		if left.varType == "string" || right.varType == "string" {
+			return Variable{value: varToString(left) + varToString(right), varType: "string"}
 		}
+		// Soma de dois ints
 		if left.varType == "int" && right.varType == "int" {
 			return Variable{value: left.value.(int) + right.value.(int), varType: "int"}
 		}
-		panic("[Semantic] '+' requer dois int ou duas strings; recebeu " + left.varType + " e " + right.varType)
+		panic("[Semantic] '+' requer dois int, duas strings, ou string com qualquer tipo; recebeu " + left.varType + " e " + right.varType)
 	case "-":
 		requireBothInt(left, right, "-")
 		return Variable{value: left.value.(int) - right.value.(int), varType: "int"}
@@ -182,6 +174,14 @@ func (n *BinOp) Evaluate(st SymbolTable) Variable {
 		}
 		return Variable{value: result, varType: "bool"}
 	case "<":
+		// Comparação de int ou string (lexicográfica)
+		if left.varType == "string" && right.varType == "string" {
+			result := 0
+			if left.value.(string) < right.value.(string) {
+				result = 1
+			}
+			return Variable{value: result, varType: "bool"}
+		}
 		requireBothInt(left, right, "<")
 		result := 0
 		if left.value.(int) < right.value.(int) {
@@ -189,6 +189,14 @@ func (n *BinOp) Evaluate(st SymbolTable) Variable {
 		}
 		return Variable{value: result, varType: "bool"}
 	case ">":
+		// Comparação de int ou string (lexicográfica)
+		if left.varType == "string" && right.varType == "string" {
+			result := 0
+			if left.value.(string) > right.value.(string) {
+				result = 1
+			}
+			return Variable{value: result, varType: "bool"}
+		}
 		requireBothInt(left, right, ">")
 		result := 0
 		if left.value.(int) > right.value.(int) {
@@ -209,6 +217,23 @@ func requireBothInt(l, r Variable, op string) {
 // toInt converte o valor interno de bool/int para int (0 ou 1)
 func toInt(v Variable) int {
 	return v.value.(int)
+}
+
+// varToString converte qualquer Variable para sua representação em string
+func varToString(v Variable) string {
+	switch v.varType {
+	case "string":
+		return v.value.(string)
+	case "int":
+		return strconv.Itoa(v.value.(int))
+	case "bool":
+		if v.value.(int) != 0 {
+			return "true"
+		}
+		return "false"
+	default:
+		return fmt.Sprintf("%v", v.value)
+	}
 }
 
 // ─────────────────────────────────────────────
@@ -320,8 +345,8 @@ type If struct {
 
 func (n *If) Evaluate(st SymbolTable) Variable {
 	cond := n.condition.Evaluate(st)
-	if cond.varType != "bool" && cond.varType != "int" {
-		panic("[Semantic] condição do if deve ser bool ou int")
+	if cond.varType != "bool" {
+		panic("[Semantic] condição do if deve ser bool; recebeu " + cond.varType)
 	}
 	if toInt(cond) != 0 {
 		return n.trueBranch.Evaluate(st)
@@ -343,8 +368,8 @@ type While struct {
 func (n *While) Evaluate(st SymbolTable) Variable {
 	for {
 		cond := n.condition.Evaluate(st)
-		if cond.varType != "bool" && cond.varType != "int" {
-			panic("[Semantic] condição do for deve ser bool ou int")
+		if cond.varType != "bool" {
+			panic("[Semantic] condição do for deve ser bool; recebeu " + cond.varType)
 		}
 		if toInt(cond) == 0 {
 			break
