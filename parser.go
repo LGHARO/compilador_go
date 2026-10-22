@@ -5,12 +5,54 @@ import (
 	"strconv"
 )
 
+// ============================================================================
+// Roteiro 8 - Geração de Código x86 (NASM)
+// ============================================================================
+// Mudanças realizadas:
+// 1. Adicionado o método Generate(st *SymbolTable) na interface Node.
+// 2. Adicionado o atributo id em cada struct de nó e implementada a função
+//    newId() para geração de identificadores únicos sequenciais (usados em rótulos).
+// 3. Atualizados todos os pontos de instanciação de nós no Parser para inicializar
+//    o campo id com newId().
+// 4. Implementado o método Generate(st *SymbolTable) para todos os nós:
+//    - IntVal / BoolVal: mov eax, <valor>
+//    - IdentifierOp: mov eax, [ebp-<shift>]
+//    - VarDec: sub esp, 4 e inicialização com mov [ebp-<shift>], eax se houver expr
+//    - Assignment: calcula expr da direita e faz mov [ebp-<shift>], eax
+//    - BinOp: avalia operando da direita (push eax), depois da esquerda (pop ecx),
+//      e executa a instrução correspondente:
+//      add, sub, imul, cdq/idiv, cmp/cmov(e/l/g), and, or
+//    - UnOp: avalia filho em eax e executa neg eax (-) ou cmove (!)
+//    - PrintOp: avalia filho, empilha eax, empilha format_out, chama printf, add esp, 8
+//    - ReadOp (Scanln): empilha scan_int, format_in, chama scanf, mov eax, dword [scan_int]
+//    - If: rótulos únicos else_<id> e exit_<id>, cmp eax, 0 e je
+//    - While: rótulos únicos loop_<id> e exit_<id>, cmp eax, 0, je exit_<id>, jmp loop_<id>
+//    - Block / NoOp: iteração sobre filhos ou sem operação
+//    - StringVal / ReadStringOp: sem geração de código de string conforme especificação
+// 5. Métodos Evaluate() de todos os nós foram mantidos intactos.
+// ============================================================================
+
+// Identificador único para rótulos em nós AST
+var nextNodeId int = 0
+
+// newId incrementa e retorna o próximo identificador único
+func newId() int {
+	nextNodeId++
+	return nextNodeId
+}
+
+// resetNodeId reinicia o contador de identificadores únicos
+func resetNodeId() {
+	nextNodeId = 0
+}
+
 // ─────────────────────────────────────────────
 // Interface Node
 // ─────────────────────────────────────────────
 
 type Node interface {
 	Evaluate(st SymbolTable) Variable
+	Generate(st *SymbolTable)
 }
 
 // ─────────────────────────────────────────────
@@ -18,6 +60,7 @@ type Node interface {
 // ─────────────────────────────────────────────
 
 type IntVal struct {
+	id    int
 	value int
 }
 
@@ -25,11 +68,16 @@ func (n *IntVal) Evaluate(st SymbolTable) Variable {
 	return Variable{value: n.value, varType: "int"}
 }
 
+func (n *IntVal) Generate(st *SymbolTable) {
+	CodeAppend(fmt.Sprintf("mov eax, %d", n.value))
+}
+
 // ─────────────────────────────────────────────
 // BoolVal
 // ─────────────────────────────────────────────
 
 type BoolVal struct {
+	id    int
 	value int // 1 = true, 0 = false
 }
 
@@ -37,11 +85,16 @@ func (n *BoolVal) Evaluate(st SymbolTable) Variable {
 	return Variable{value: n.value, varType: "bool"}
 }
 
+func (n *BoolVal) Generate(st *SymbolTable) {
+	CodeAppend(fmt.Sprintf("mov eax, %d", n.value))
+}
+
 // ─────────────────────────────────────────────
 // StringVal
 // ─────────────────────────────────────────────
 
 type StringVal struct {
+	id    int
 	value string
 }
 
@@ -49,11 +102,16 @@ func (n *StringVal) Evaluate(st SymbolTable) Variable {
 	return Variable{value: n.value, varType: "string"}
 }
 
+func (n *StringVal) Generate(st *SymbolTable) {
+	// Não será gerado código para nós de strings
+}
+
 // ─────────────────────────────────────────────
 // UnOp
 // ─────────────────────────────────────────────
 
 type UnOp struct {
+	id       int
 	value    string
 	children Node
 }
@@ -84,11 +142,27 @@ func (n *UnOp) Evaluate(st SymbolTable) Variable {
 	panic("[Semantic] operador unário inválido: " + n.value)
 }
 
+func (n *UnOp) Generate(st *SymbolTable) {
+	n.children.Generate(st)
+	switch n.value {
+	case "+":
+		// Valor já se encontra em EAX
+	case "-":
+		CodeAppend("neg eax")
+	case "!":
+		CodeAppend("cmp eax, 0")
+		CodeAppend("mov eax, 0")
+		CodeAppend("mov ecx, 1")
+		CodeAppend("cmove eax, ecx")
+	}
+}
+
 // ─────────────────────────────────────────────
 // BinOp
 // ─────────────────────────────────────────────
 
 type BinOp struct {
+	id            int
 	value         string
 	childrenLeft  Node
 	childrenRight Node
@@ -207,6 +281,50 @@ func (n *BinOp) Evaluate(st SymbolTable) Variable {
 	panic("[Semantic] operador binário inválido: " + n.value)
 }
 
+func (n *BinOp) Generate(st *SymbolTable) {
+	// Avalia a subárvore direita e empilha o resultado
+	n.childrenRight.Generate(st)
+	CodeAppend("push eax")
+
+	// Avalia a subárvore esquerda (resultado fica em EAX)
+	n.childrenLeft.Generate(st)
+
+	// Desempilha o resultado da direita para ECX
+	CodeAppend("pop ecx")
+
+	// Executa a operação com EAX (esquerda) e ECX (direita)
+	switch n.value {
+	case "+":
+		CodeAppend("add eax, ecx")
+	case "-":
+		CodeAppend("sub eax, ecx")
+	case "*":
+		CodeAppend("imul ecx")
+	case "/":
+		CodeAppend("cdq")
+		CodeAppend("idiv ecx")
+	case "==":
+		CodeAppend("cmp eax, ecx")
+		CodeAppend("mov eax, 0")
+		CodeAppend("mov ecx, 1")
+		CodeAppend("cmove eax, ecx")
+	case "<":
+		CodeAppend("cmp eax, ecx")
+		CodeAppend("mov eax, 0")
+		CodeAppend("mov ecx, 1")
+		CodeAppend("cmovl eax, ecx")
+	case ">":
+		CodeAppend("cmp eax, ecx")
+		CodeAppend("mov eax, 0")
+		CodeAppend("mov ecx, 1")
+		CodeAppend("cmovg eax, ecx")
+	case "&&":
+		CodeAppend("and eax, ecx")
+	case "||":
+		CodeAppend("or eax, ecx")
+	}
+}
+
 // requireBothInt panics se os dois operandos não forem int
 func requireBothInt(l, r Variable, op string) {
 	if l.varType != "int" || r.varType != "int" {
@@ -241,6 +359,7 @@ func varToString(v Variable) string {
 // ─────────────────────────────────────────────
 
 type IdentifierOp struct {
+	id    int
 	value string // nome da variável
 }
 
@@ -248,11 +367,17 @@ func (n *IdentifierOp) Evaluate(st SymbolTable) Variable {
 	return st.getter(n.value)
 }
 
+func (n *IdentifierOp) Generate(st *SymbolTable) {
+	v := st.getter(n.value)
+	CodeAppend(fmt.Sprintf("mov eax, [ebp-%d]", v.shift))
+}
+
 // ─────────────────────────────────────────────
 // PrintOp
 // ─────────────────────────────────────────────
 
 type PrintOp struct {
+	id       int
 	children Node
 }
 
@@ -273,11 +398,20 @@ func (n *PrintOp) Evaluate(st SymbolTable) Variable {
 	return Variable{value: 0, varType: "int"}
 }
 
+func (n *PrintOp) Generate(st *SymbolTable) {
+	n.children.Generate(st)
+	CodeAppend("push eax")
+	CodeAppend("push format_out")
+	CodeAppend("call printf")
+	CodeAppend("add esp, 8")
+}
+
 // ─────────────────────────────────────────────
 // Assignment
 // ─────────────────────────────────────────────
 
 type Assignment struct {
+	id            int
 	childrenLeft  Node // IdentifierOp
 	childrenRight Node // expressão
 }
@@ -289,11 +423,19 @@ func (n *Assignment) Evaluate(st SymbolTable) Variable {
 	return Variable{value: 0, varType: "int"}
 }
 
+func (n *Assignment) Generate(st *SymbolTable) {
+	name := n.childrenLeft.(*IdentifierOp).value
+	n.childrenRight.Generate(st)
+	v := st.getter(name)
+	CodeAppend(fmt.Sprintf("mov [ebp-%d], eax", v.shift))
+}
+
 // ─────────────────────────────────────────────
 // VarDec
 // ─────────────────────────────────────────────
 
 type VarDec struct {
+	id       int
 	value    string // tipo da variável ("int", "string", "bool")
 	children []Node // [0]=IdentifierOp, [1]=expressão de inicialização (opcional)
 }
@@ -308,11 +450,23 @@ func (n *VarDec) Evaluate(st SymbolTable) Variable {
 	return Variable{value: 0, varType: "int"}
 }
 
+func (n *VarDec) Generate(st *SymbolTable) {
+	name := n.children[0].(*IdentifierOp).value
+	st.createVariable(name, n.value)
+	CodeAppend("sub esp, 4")
+	if len(n.children) > 1 {
+		n.children[1].Generate(st)
+		v := st.getter(name)
+		CodeAppend(fmt.Sprintf("mov [ebp-%d], eax", v.shift))
+	}
+}
+
 // ─────────────────────────────────────────────
 // Block
 // ─────────────────────────────────────────────
 
 type Block struct {
+	id       int
 	children []Node
 }
 
@@ -323,14 +477,26 @@ func (n *Block) Evaluate(st SymbolTable) Variable {
 	return Variable{value: 0, varType: "int"}
 }
 
+func (n *Block) Generate(st *SymbolTable) {
+	for _, child := range n.children {
+		child.Generate(st)
+	}
+}
+
 // ─────────────────────────────────────────────
 // NoOp
 // ─────────────────────────────────────────────
 
-type NoOp struct{}
+type NoOp struct {
+	id int
+}
 
 func (n *NoOp) Evaluate(st SymbolTable) Variable {
 	return Variable{value: 0, varType: "int"}
+}
+
+func (n *NoOp) Generate(st *SymbolTable) {
+	// Nenhuma instrução necessária
 }
 
 // ─────────────────────────────────────────────
@@ -338,6 +504,7 @@ func (n *NoOp) Evaluate(st SymbolTable) Variable {
 // ─────────────────────────────────────────────
 
 type If struct {
+	id          int
 	condition   Node
 	trueBranch  Node
 	falseBranch Node
@@ -356,11 +523,29 @@ func (n *If) Evaluate(st SymbolTable) Variable {
 	return Variable{value: 0, varType: "int"}
 }
 
+func (n *If) Generate(st *SymbolTable) {
+	n.condition.Generate(st)
+	CodeAppend("cmp eax, 0")
+	if n.falseBranch != nil {
+		CodeAppend(fmt.Sprintf("je else_%d", n.id))
+		n.trueBranch.Generate(st)
+		CodeAppend(fmt.Sprintf("jmp exit_%d", n.id))
+		CodeAppend(fmt.Sprintf("else_%d:", n.id))
+		n.falseBranch.Generate(st)
+		CodeAppend(fmt.Sprintf("exit_%d:", n.id))
+	} else {
+		CodeAppend(fmt.Sprintf("je exit_%d", n.id))
+		n.trueBranch.Generate(st)
+		CodeAppend(fmt.Sprintf("exit_%d:", n.id))
+	}
+}
+
 // ─────────────────────────────────────────────
 // While
 // ─────────────────────────────────────────────
 
 type While struct {
+	id        int
 	condition Node
 	block     Node
 }
@@ -379,11 +564,23 @@ func (n *While) Evaluate(st SymbolTable) Variable {
 	return Variable{value: 0, varType: "int"}
 }
 
+func (n *While) Generate(st *SymbolTable) {
+	CodeAppend(fmt.Sprintf("loop_%d:", n.id))
+	n.condition.Generate(st)
+	CodeAppend("cmp eax, 0")
+	CodeAppend(fmt.Sprintf("je exit_%d", n.id))
+	n.block.Generate(st)
+	CodeAppend(fmt.Sprintf("jmp loop_%d", n.id))
+	CodeAppend(fmt.Sprintf("exit_%d:", n.id))
+}
+
 // ─────────────────────────────────────────────
 // ReadOp  (Scanln — lê um inteiro)
 // ─────────────────────────────────────────────
 
-type ReadOp struct{}
+type ReadOp struct {
+	id int
+}
 
 func (n *ReadOp) Evaluate(st SymbolTable) Variable {
 	var val int
@@ -391,16 +588,30 @@ func (n *ReadOp) Evaluate(st SymbolTable) Variable {
 	return Variable{value: val, varType: "int"}
 }
 
+func (n *ReadOp) Generate(st *SymbolTable) {
+	CodeAppend("push scan_int")
+	CodeAppend("push format_in")
+	CodeAppend("call scanf")
+	CodeAppend("add esp, 8")
+	CodeAppend("mov eax, dword [scan_int]")
+}
+
 // ─────────────────────────────────────────────
 // ReadStringOp  (ScanlnStr — lê uma string)
 // ─────────────────────────────────────────────
 
-type ReadStringOp struct{}
+type ReadStringOp struct {
+	id int
+}
 
 func (n *ReadStringOp) Evaluate(st SymbolTable) Variable {
 	var val string
 	fmt.Scan(&val)
 	return Variable{value: val, varType: "string"}
+}
+
+func (n *ReadStringOp) Generate(st *SymbolTable) {
+	// Não será gerado código para strings
 }
 
 // ─────────────────────────────────────────────
@@ -423,7 +634,7 @@ func ParseFactor(lexer *Lexer) Node {
 			panic("[PARSER] número inválido")
 		}
 		lexer.selectNext()
-		return &IntVal{value: num}
+		return &IntVal{id: newId(), value: num}
 	}
 
 	// Literal booleano
@@ -433,14 +644,14 @@ func ParseFactor(lexer *Lexer) Node {
 			val = 1
 		}
 		lexer.selectNext()
-		return &BoolVal{value: val}
+		return &BoolVal{id: newId(), value: val}
 	}
 
 	// Literal string
 	if lexer.next.tipo == "STR" {
 		s := lexer.next.value
 		lexer.selectNext()
-		return &StringVal{value: s}
+		return &StringVal{id: newId(), value: s}
 	}
 
 	// Operadores unários
@@ -448,6 +659,7 @@ func ParseFactor(lexer *Lexer) Node {
 		op := lexer.next.value
 		lexer.selectNext()
 		return &UnOp{
+			id:       newId(),
 			value:    op,
 			children: ParseFactor(lexer),
 		}
@@ -464,7 +676,7 @@ func ParseFactor(lexer *Lexer) Node {
 			panic("[PARSER] Esperava ')' após Scanln")
 		}
 		lexer.selectNext()
-		return &ReadOp{}
+		return &ReadOp{id: newId()}
 	}
 
 	// ScanlnStr()
@@ -478,7 +690,7 @@ func ParseFactor(lexer *Lexer) Node {
 			panic("[PARSER] Esperava ')' após ScanlnStr")
 		}
 		lexer.selectNext()
-		return &ReadStringOp{}
+		return &ReadStringOp{id: newId()}
 	}
 
 	// Parênteses
@@ -494,7 +706,7 @@ func ParseFactor(lexer *Lexer) Node {
 
 	// Identificador
 	if lexer.next.tipo == "IDEN" {
-		idVal := &IdentifierOp{value: lexer.next.value}
+		idVal := &IdentifierOp{id: newId(), value: lexer.next.value}
 		lexer.selectNext()
 		return idVal
 	}
@@ -518,6 +730,7 @@ func ParseTerm(lexer *Lexer) Node {
 			simbolo = "/"
 		}
 		resultado = &BinOp{
+			id:            newId(),
 			value:         simbolo,
 			childrenLeft:  resultado,
 			childrenRight: proximo,
@@ -543,6 +756,7 @@ func ParseExpression(lexer *Lexer) Node {
 			simbolo = "-"
 		}
 		resultado = &BinOp{
+			id:            newId(),
 			value:         simbolo,
 			childrenLeft:  resultado,
 			childrenRight: proximo,
@@ -569,6 +783,7 @@ func ParseRelExpression(lexer *Lexer) Node {
 			simbolo = ">"
 		}
 		resultado = &BinOp{
+			id:            newId(),
 			value:         simbolo,
 			childrenLeft:  resultado,
 			childrenRight: proximo,
@@ -587,6 +802,7 @@ func ParseBoolTerm(lexer *Lexer) Node {
 		lexer.selectNext()
 		proximo := ParseRelExpression(lexer)
 		resultado = &BinOp{
+			id:            newId(),
 			value:         "&&",
 			childrenLeft:  resultado,
 			childrenRight: proximo,
@@ -605,6 +821,7 @@ func ParseBoolExpression(lexer *Lexer) Node {
 		lexer.selectNext()
 		proximo := ParseBoolTerm(lexer)
 		resultado = &BinOp{
+			id:            newId(),
 			value:         "||",
 			childrenLeft:  resultado,
 			childrenRight: proximo,
@@ -628,7 +845,7 @@ func parseBlock(lexer *Lexer) Node {
 		panic("[PARSER] Unexpected token CLOSE_BRA: '}' não pode estar na mesma linha que '{'")
 	}
 
-	block := &Block{children: []Node{}}
+	block := &Block{id: newId(), children: []Node{}}
 	for lexer.next.tipo != "CLOSE_BRA" && lexer.next.tipo != "EOF" {
 		if lexer.next.tipo == "END" {
 			lexer.selectNext()
@@ -652,7 +869,7 @@ func parseBlock(lexer *Lexer) Node {
 func parseStatement(lexer *Lexer) Node {
 	if lexer.next.tipo == "END" {
 		lexer.selectNext()
-		return &NoOp{}
+		return &NoOp{id: newId()}
 	}
 
 	if lexer.next.tipo == "OPEN_BRA" {
@@ -666,7 +883,7 @@ func parseStatement(lexer *Lexer) Node {
 		if lexer.next.tipo != "IDEN" {
 			panic("[PARSER] Esperava identificador após 'var'")
 		}
-		iden := &IdentifierOp{value: lexer.next.value}
+		iden := &IdentifierOp{id: newId(), value: lexer.next.value}
 		lexer.selectNext()
 
 		if lexer.next.tipo != "TYPE" {
@@ -676,6 +893,7 @@ func parseStatement(lexer *Lexer) Node {
 		lexer.selectNext()
 
 		node := &VarDec{
+			id:       newId(),
 			value:    varType,
 			children: []Node{iden},
 		}
@@ -708,7 +926,7 @@ func parseStatement(lexer *Lexer) Node {
 		if lexer.next.tipo == "END" {
 			lexer.selectNext()
 		}
-		return &PrintOp{children: expr}
+		return &PrintOp{id: newId(), children: expr}
 	}
 
 	// if <expr> { ... } [else { ... }]
@@ -743,7 +961,7 @@ func parseStatement(lexer *Lexer) Node {
 				falseBr = parseBlock(lexer)
 			}
 		}
-		return &If{condition: cond, trueBranch: trueBr, falseBranch: falseBr}
+		return &If{id: newId(), condition: cond, trueBranch: trueBr, falseBranch: falseBr}
 	}
 
 	// for <expr> { ... }
@@ -756,7 +974,7 @@ func parseStatement(lexer *Lexer) Node {
 		}
 
 		blk := parseBlock(lexer)
-		return &While{condition: cond, block: blk}
+		return &While{id: newId(), condition: cond, block: blk}
 	}
 
 	// Atribuição: <iden> = <expr>
@@ -767,8 +985,9 @@ func parseStatement(lexer *Lexer) Node {
 		if lexer.next.tipo == "ASSIGN" {
 			lexer.selectNext()
 			exprRight := ParseBoolExpression(lexer)
-			identifier := &IdentifierOp{value: idToken.value}
+			identifier := &IdentifierOp{id: newId(), value: idToken.value}
 			assign := &Assignment{
+				id:            newId(),
 				childrenLeft:  identifier,
 				childrenRight: exprRight,
 			}
@@ -789,6 +1008,7 @@ func parseStatement(lexer *Lexer) Node {
 
 func parseProgram(lexer *Lexer) *Block {
 	block := &Block{
+		id:       newId(),
 		children: []Node{},
 	}
 	for lexer.next.tipo != "EOF" {
