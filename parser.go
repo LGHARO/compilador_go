@@ -30,6 +30,8 @@ import (
 //    - Block / NoOp: iteração sobre filhos ou sem operação
 //    - StringVal / ReadStringOp: sem geração de código de string conforme especificação
 // 5. Métodos Evaluate() de todos os nós foram mantidos intactos.
+// 6. Removida a restrição que impedia '}' na mesma linha que '{' em parseBlock,
+//    permitindo blocos vazios inline como '{{ }}'.
 // ============================================================================
 
 // Identificador único para rótulos em nós AST
@@ -839,11 +841,6 @@ func parseBlock(lexer *Lexer) Node {
 		panic("[PARSER] Esperava '{'")
 	}
 	lexer.selectNext()
-
-	// '}' na mesma linha que '{' é inválido
-	if lexer.next.tipo == "CLOSE_BRA" {
-		panic("[PARSER] Unexpected token CLOSE_BRA: '}' não pode estar na mesma linha que '{'")
-	}
 
 	block := &Block{id: newId(), children: []Node{}}
 	for lexer.next.tipo != "CLOSE_BRA" && lexer.next.tipo != "EOF" {
