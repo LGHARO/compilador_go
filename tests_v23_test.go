@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -379,4 +380,49 @@ func main() {
 `
 	runCode(code)
 }
+
+// Test101MissingSecondArgDecl (Test 101): vírgula trailing na declaração de parâmetros deve dar erro
+func Test101MissingSecondArgDecl(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("Esperava panic por vírgula trailing na declaração de parâmetros")
+		}
+	}()
+
+	code := `
+func test(x int,) int {
+  return 2
+}
+func main() {
+  Println(test(5))
+}
+`
+	runCode(code)
+}
+
+// Test102MissingSecondArgCall (Test 102): vírgula trailing na chamada de função deve dar erro de [PARSER]
+func Test102MissingSecondArgCall(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("Esperava panic por vírgula trailing na chamada de função")
+		}
+		errMsg := fmt.Sprint(r)
+		if !strings.Contains(errMsg, "[PARSER]") {
+			t.Fatalf("Esperava erro de [PARSER], mas obteve: %s", errMsg)
+		}
+	}()
+
+	code := `
+func test(x int, y int) int {
+  return x + y
+}
+func main() {
+  Println(test(2, ))
+}
+`
+	runCode(code)
+}
+
 

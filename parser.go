@@ -673,13 +673,20 @@ func ParseFactor(lexer *Lexer) Node {
 		if lexer.next.tipo == "OPEN_PAR" {
 			lexer.selectNext()
 			args := []Node{}
-			for lexer.next.tipo != "CLOSE_PAR" {
-				argExpr := ParseBoolExpression(lexer)
-				args = append(args, argExpr)
-				if lexer.next.tipo == "COMMA" {
-					lexer.selectNext()
-				} else if lexer.next.tipo != "CLOSE_PAR" {
-					panic("[PARSER] Esperava ',' ou ')' na chamada de função")
+			if lexer.next.tipo != "CLOSE_PAR" {
+				for {
+					argExpr := ParseBoolExpression(lexer)
+					args = append(args, argExpr)
+					if lexer.next.tipo == "COMMA" {
+						lexer.selectNext()
+						if lexer.next.tipo == "CLOSE_PAR" {
+							panic("[PARSER] Esperava expressão após ',' na chamada de função")
+						}
+					} else if lexer.next.tipo == "CLOSE_PAR" {
+						break
+					} else {
+						panic("[PARSER] Esperava ',' ou ')' na chamada de função")
+					}
 				}
 			}
 			if lexer.next.tipo != "CLOSE_PAR" {
@@ -863,28 +870,35 @@ func parseFuncDeclaration(lexer *Lexer) *FuncDec {
 	lexer.selectNext()
 
 	params := []Node{}
-	for lexer.next.tipo != "CLOSE_PAR" {
-		if lexer.next.tipo != "IDEN" {
-			panic("[PARSER] Esperava identificador de parâmetro")
-		}
-		paramId := &IdentifierOp{value: lexer.next.value}
-		lexer.selectNext()
-
-		if lexer.next.tipo != "TYPE" {
-			panic("[PARSER] Esperava tipo após identificador do parâmetro")
-		}
-		paramType := lexer.next.value
-		lexer.selectNext()
-
-		params = append(params, &VarDec{
-			value:    paramType,
-			children: []Node{paramId},
-		})
-
-		if lexer.next.tipo == "COMMA" {
+	if lexer.next.tipo != "CLOSE_PAR" {
+		for {
+			if lexer.next.tipo != "IDEN" {
+				panic("[PARSER] Esperava identificador de parâmetro")
+			}
+			paramId := &IdentifierOp{value: lexer.next.value}
 			lexer.selectNext()
-		} else if lexer.next.tipo != "CLOSE_PAR" {
-			panic("[PARSER] Esperava ',' ou ')' na lista de parâmetros")
+
+			if lexer.next.tipo != "TYPE" {
+				panic("[PARSER] Esperava tipo após identificador do parâmetro")
+			}
+			paramType := lexer.next.value
+			lexer.selectNext()
+
+			params = append(params, &VarDec{
+				value:    paramType,
+				children: []Node{paramId},
+			})
+
+			if lexer.next.tipo == "COMMA" {
+				lexer.selectNext()
+				if lexer.next.tipo == "CLOSE_PAR" {
+					panic("[PARSER] Esperava parâmetro após ',' na declaração da função")
+				}
+			} else if lexer.next.tipo == "CLOSE_PAR" {
+				break
+			} else {
+				panic("[PARSER] Esperava ',' ou ')' na lista de parâmetros")
+			}
 		}
 	}
 
@@ -1066,13 +1080,20 @@ func parseStatement(lexer *Lexer) Node {
 		if lexer.next.tipo == "OPEN_PAR" {
 			lexer.selectNext()
 			args := []Node{}
-			for lexer.next.tipo != "CLOSE_PAR" {
-				argExpr := ParseBoolExpression(lexer)
-				args = append(args, argExpr)
-				if lexer.next.tipo == "COMMA" {
-					lexer.selectNext()
-				} else if lexer.next.tipo != "CLOSE_PAR" {
-					panic("[PARSER] Esperava ',' ou ')' na chamada de função")
+			if lexer.next.tipo != "CLOSE_PAR" {
+				for {
+					argExpr := ParseBoolExpression(lexer)
+					args = append(args, argExpr)
+					if lexer.next.tipo == "COMMA" {
+						lexer.selectNext()
+						if lexer.next.tipo == "CLOSE_PAR" {
+							panic("[PARSER] Esperava expressão após ',' na chamada de função")
+						}
+					} else if lexer.next.tipo == "CLOSE_PAR" {
+						break
+					} else {
+						panic("[PARSER] Esperava ',' ou ')' na chamada de função")
+					}
 				}
 			}
 			if lexer.next.tipo != "CLOSE_PAR" {
