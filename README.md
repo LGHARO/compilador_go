@@ -11,15 +11,7 @@ This repository is monitored by Compiler Tester for automatic compilation status
 PROGRAM = { FUNCTION | STATEMENT } ;
 FUNCTION = "func", IDENTIFIER, "(", [ PARAMETER, { ",", PARAMETER } ], ")", [ TYPE ], BLOCK ;
 PARAMETER = IDENTIFIER, TYPE ;
-STATEMENT = ( "var", IDENTIFIER, TYPE, [ "=", BOOLEXPRESSION ]
-            | "Println", "(", BOOLEXPRESSION, ")"
-            | "for", BOOLEXPRESSION, BLOCK
-            | "if", BOOLEXPRESSION, BLOCK, [ "else", ( IF | BLOCK ) ]
-            | "return", BOOLEXPRESSION
-            | FUNCCALL
-            | BLOCK
-            | IDENTIFIER, "=", BOOLEXPRESSION
-            | Ε ), "\n" ;
+STATEMENT = ( "var", IDENTIFIER, TYPE, [ "=", BOOLEXPRESSION ] | "Println", "(", BOOLEXPRESSION, ")" | "for", BOOLEXPRESSION, BLOCK | "if", BOOLEXPRESSION, BLOCK, [ "else", ( IF | BLOCK ) ] | "return", BOOLEXPRESSION | FUNCCALL | BLOCK | IDENTIFIER, "=", BOOLEXPRESSION | Ε ), "\n" ;
 FUNCCALL = IDENTIFIER, "(", [ BOOLEXPRESSION, { ",", BOOLEXPRESSION } ], ")" ;
 BLOCK = "{", "\n", { STATEMENT }, "}" ;
 IF = "if", BOOLEXPRESSION, BLOCK, [ "else", ( IF | BLOCK ) ] ;
@@ -33,11 +25,11 @@ RELEXPRESSION = EXPRESSION, { ("<" | "==" | ">"), EXPRESSION } ;
 
 EXPRESSION = TERM, { ("+" | "-"), TERM } ;
 TERM = FACTOR, { ("*" | "/"), FACTOR } ;
-FACTOR = NUMBER | BOOLEAN | STRING | FUNCCALL | IDENTIFIER | ( "!" | "+" | "-" ), FACTOR | "(", BOOLEXPRESSION, ")" | "Scanln", "(", ")" | "ScanlnStr", "(", ")" ;
+FACTOR = NUMBER | BOOLEAN | STRING | FUNCCALL | IDENTIFIER | ( "!" | "+" | "-" ), FACTOR | "(", BOOLEXPRESSION, ")" | "Scanln", "(", ")" ;
 
 IDENTIFIER = LETTER, { LETTER | DIGIT | "_" } ;
 NUMBER = DIGIT, { DIGIT } ;
-STRING = '"', { ANY_CHAR_EXCEPT_QUOTE_OR_NEWLINE }, '"' ;
+STRING = '"', {"..."}, '"' ;
 BOOLEAN = "true" | "false" ;
 TYPE = "string" | "int" | "bool" ;
 LETTER = "a" | "b" | ... | "z" | "A" | "B" | ... | "Z" ;
