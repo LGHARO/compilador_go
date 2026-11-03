@@ -316,3 +316,67 @@ func soma(x int, y int) int {
 `
 	runCode(code)
 }
+
+// TestMisalignedCloseBraceIf (Test 54): if 1 == 1 { } sem quebra de linha deve dar erro
+func TestMisalignedCloseBraceIf(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("Esperava panic por '}' na mesma linha que '{' em if")
+		}
+	}()
+
+	code := `
+func main() {
+  if 1 == 1 { }
+}
+`
+	runCode(code)
+}
+
+// TestMisalignedCloseBraceElse (Test 56): else { } sem quebra de linha deve dar erro
+func TestMisalignedCloseBraceElse(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("Esperava panic por '}' na mesma linha que '{' em else")
+		}
+	}()
+
+	code := `
+func main() {
+  if 1 == 1 {
+  } else { }
+}
+`
+	runCode(code)
+}
+
+// TestMisalignedCloseBraceWhile (Test 59): for 1 == 1 { } sem quebra de linha deve dar erro
+func TestMisalignedCloseBraceWhile(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("Esperava panic por '}' na mesma linha que '{' em for")
+		}
+	}()
+
+	code := `
+func main() {
+  for 1 == 1 { }
+}
+`
+	runCode(code)
+}
+
+// TestValidEmptyBlockWithNewline verifica que bloco vazio com quebra de linha é aceito
+func TestValidEmptyBlockWithNewline(t *testing.T) {
+	code := `
+func main() {
+  if 1 == 1 {
+  }
+}
+`
+	runCode(code)
+}
+

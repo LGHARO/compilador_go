@@ -819,6 +819,11 @@ func parseBlock(lexer *Lexer) Node {
 	}
 	lexer.selectNext()
 
+	// '}' na mesma linha que '{' é inválido (BLOCK = "{", "\n", { STATEMENT }, "}")
+	if lexer.next.tipo == "CLOSE_BRA" {
+		panic("[PARSER] Unexpected token CLOSE_BRA: '}' não pode estar na mesma linha que '{'")
+	}
+
 	block := &Block{children: []Node{}}
 	for lexer.next.tipo != "CLOSE_BRA" && lexer.next.tipo != "EOF" {
 		if lexer.next.tipo == "END" {
