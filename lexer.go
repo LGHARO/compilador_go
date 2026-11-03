@@ -4,6 +4,14 @@ import (
 	"unicode"
 )
 
+// ============================================================================
+// Versão 2.3 - Funções e Escopo de Variáveis
+// ============================================================================
+// Mudanças realizadas:
+// 1. Adicionado suporte ao símbolo de vírgula (','): token COMMA.
+// 2. Adicionadas as palavras reservadas 'func' (token FUNC) e 'return' (token RETURN).
+// ============================================================================
+
 type Lexer struct {
 	source   string
 	position int
@@ -22,6 +30,12 @@ func (le *Lexer) selectNext() {
 	}
 
 	char := le.source[le.position]
+
+	if char == ',' {
+		le.next = Token{tipo: "COMMA", value: ","}
+		le.position++
+		return
+	}
 
 	if char == '+' {
 		le.next = Token{tipo: "PLUS", value: "+"}
@@ -172,6 +186,10 @@ func (le *Lexer) selectNext() {
 			le.next = Token{tipo: "READ_STR", value: idenStr}
 		case "var":
 			le.next = Token{tipo: "VAR", value: idenStr}
+		case "func":
+			le.next = Token{tipo: "FUNC", value: idenStr}
+		case "return":
+			le.next = Token{tipo: "RETURN", value: idenStr}
 		case "true", "false":
 			le.next = Token{tipo: "BOOL", value: idenStr}
 		case "string", "int", "bool":

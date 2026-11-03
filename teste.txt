@@ -1,15 +1,21 @@
-// Programa de Testes Completo - atualizado para suporte a tipos
-var n int = Scanln()
-var f int = 1
-var i int = 1
+// Programa de Testes Completo - v2.3 Funções e Escopo
+var b int = 5 // Variável Global
 
-if n < 2 && !(n == 0) {
-f = 1
-} else {
-for i < n || i == n {
-f = f * i
-i = i + 1
-}
+func soma(x int, y int) int {
+  var a int // Variável Local
+  a = x + y 
+  Println(a) // Imprime 7
+  return a
 }
 
-Println(f)
+func main()  {
+  var a int
+  {
+    var b int
+    a = 3
+    b = soma(a, 4)
+    Println(b) // Imprime 7
+  }
+  Println(a) // Imprime 3
+  Println(b) // Imprime 5
+}
