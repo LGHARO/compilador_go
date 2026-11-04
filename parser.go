@@ -34,6 +34,23 @@ func (unOp *UnOp) Evaluate() int {
 	}
 }
 
+// FactOp
+type FactOp struct {
+	children Node
+}
+
+func (factOp *FactOp) Evaluate() int {
+	val := factOp.children.Evaluate()
+	if val < 0 {
+		panic("[Semantic] fatorial de número negativo")
+	}
+	res := 1
+	for i := 2; i <= val; i++ {
+		res *= i
+	}
+	return res
+}
+
 // BinOp
 type BinOp struct {
 	value         string
@@ -64,7 +81,7 @@ type Parser struct {
 	lexer Lexer
 }
 
-func ParseFactor(lexer *Lexer) Node {
+func ParseBase(lexer *Lexer) Node {
 	// 1. Se for um número, consome e retorna o valor
 	if lexer.next.tipo == "INT" {
 		num, err := strconv.Atoi(lexer.next.value)
@@ -77,30 +94,6 @@ func ParseFactor(lexer *Lexer) Node {
 			value: num,
 		}
 		return intVal
-	}
-
-	if lexer.next.tipo == "MINUS" || lexer.next.tipo == "PLUS" {
-
-		// colocamos como filho o nodo resultado de parseFactor
-		if lexer.next.tipo == "MINUS" {
-
-			lexer.selectNext()
-			unOp := &UnOp{
-				value:    "-",
-				children: ParseFactor(lexer),
-			}
-			return unOp
-
-		} else {
-
-			lexer.selectNext()
-			unOp := &UnOp{
-				value:    "+",
-				children: ParseFactor(lexer),
-			}
-			return unOp
-
-		}
 	}
 
 	// 2. Se for um parênteses, resolve a expressão interna
@@ -119,6 +112,32 @@ func ParseFactor(lexer *Lexer) Node {
 	}
 
 	panic("[PARSER] token inesperado, esperava número ou '(': " + lexer.next.value)
+}
+
+func ParseFact(lexer *Lexer) Node {
+	node := ParseBase(lexer)
+
+	for lexer.next.tipo == "FACT" {
+		lexer.selectNext()
+		node = &FactOp{
+			children: node,
+		}
+	}
+
+	return node
+}
+
+func ParseFactor(lexer *Lexer) Node {
+	if lexer.next.tipo == "MINUS" || lexer.next.tipo == "PLUS" {
+		op := lexer.next.value
+		lexer.selectNext()
+		return &UnOp{
+			value:    op,
+			children: ParseFactor(lexer),
+		}
+	}
+
+	return ParseFact(lexer)
 }
 
 func ParseTerm(lexer *Lexer) Node {

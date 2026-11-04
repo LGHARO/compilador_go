@@ -68,6 +68,13 @@ func (le *Lexer) selectNext() {
 		return
 	}
 
+	// Se o caractere é igual a '!'
+	if char == '!' {
+		le.next = Token{tipo: "FACT", value: "!"}
+		le.position++
+		return
+	}
+
 	// se for digito
 	if unicode.IsDigit(rune(char)) {
 
