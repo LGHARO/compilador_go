@@ -31,6 +31,12 @@ func (le *Lexer) selectNext() {
 
 	char := le.source[le.position]
 
+	if char == '.' {
+		le.next = Token{tipo: "DOT", value: "."}
+		le.position++
+		return
+	}
+
 	if char == ',' {
 		le.next = Token{tipo: "COMMA", value: ","}
 		le.position++
@@ -186,6 +192,10 @@ func (le *Lexer) selectNext() {
 			le.next = Token{tipo: "READ_STR", value: idenStr}
 		case "var":
 			le.next = Token{tipo: "VAR", value: idenStr}
+		case "type":
+			le.next = Token{tipo: "TYPE_DEF", value: idenStr}
+		case "struct":
+			le.next = Token{tipo: "STRUCT", value: idenStr}
 		case "func":
 			le.next = Token{tipo: "FUNC", value: idenStr}
 		case "return":

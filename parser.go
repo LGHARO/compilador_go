@@ -294,8 +294,68 @@ func (n *PrintOp) Evaluate(st SymbolTable) Variable {
 		fmt.Println(val.value.(string))
 	case "void":
 		panic("[Semantic] nao e possivel imprimir expressao do tipo void")
+	default:
+		if inst, ok := val.value.(*StructInstance); ok && inst != nil {
+			fmt.Println(inst.String())
+		} else {
+			fmt.Println(val.value)
+		}
 	}
 	return Variable{value: 0, varType: "int", isFunc: false, isReturn: false}
+}
+
+// ─────────────────────────────────────────────
+// MemberOp
+// ─────────────────────────────────────────────
+
+type MemberOp struct {
+	base  Node
+	field string
+}
+
+func (n *MemberOp) Evaluate(st SymbolTable) Variable {
+	baseVal := n.base.Evaluate(st)
+	inst, ok := baseVal.value.(*StructInstance)
+	if !ok || inst == nil {
+		panic(fmt.Sprintf("[Semantic] tentativa de acessar campo '%s' em variavel que nao e struct (tipo '%s')", n.field, baseVal.varType))
+	}
+	fieldVal, exists := inst.Fields[n.field]
+	if !exists {
+		panic(fmt.Sprintf("[Semantic] struct '%s' nao possui o campo '%s'", inst.TypeName, n.field))
+	}
+	return fieldVal
+}
+
+// ─────────────────────────────────────────────
+// StructDec
+// ─────────────────────────────────────────────
+
+type StructField struct {
+	name    string
+	varType string
+}
+
+type StructDec struct {
+	name   string
+	fields []StructField
+}
+
+func (n *StructDec) Evaluate(st SymbolTable) Variable {
+	fieldMap := make(map[string]string)
+	order := make([]string, len(n.fields))
+
+	for i, f := range n.fields {
+		fieldMap[f.name] = f.varType
+		order[i] = f.name
+	}
+
+	st.createStructType(n.name, &StructTypeDef{
+		Name:   n.name,
+		Fields: fieldMap,
+		Order:  order,
+	})
+
+	return Variable{value: nil, varType: "void", isFunc: false, isReturn: false}
 }
 
 // ─────────────────────────────────────────────
@@ -303,18 +363,56 @@ func (n *PrintOp) Evaluate(st SymbolTable) Variable {
 // ─────────────────────────────────────────────
 
 type Assignment struct {
-	childrenLeft  Node // IdentifierOp
+	childrenLeft  Node // IdentifierOp ou MemberOp
 	childrenRight Node // expressão
 }
 
 func (n *Assignment) Evaluate(st SymbolTable) Variable {
-	name := n.childrenLeft.(*IdentifierOp).value
 	val := n.childrenRight.Evaluate(st)
 	if val.varType == "void" {
-		panic("[Semantic] nao e possivel atribuir expressao do tipo void para: " + name)
+		panic("[Semantic] nao e possivel atribuir expressao do tipo void")
 	}
-	st.setter(name, val)
-	return Variable{value: 0, varType: "int", isFunc: false, isReturn: false}
+
+	if iden, ok := n.childrenLeft.(*IdentifierOp); ok {
+		st.setter(iden.value, val)
+		return Variable{value: 0, varType: "int", isFunc: false, isReturn: false}
+	}
+
+	if mem, ok := n.childrenLeft.(*MemberOp); ok {
+		assignMember(st, mem, val)
+		return Variable{value: 0, varType: "int", isFunc: false, isReturn: false}
+	}
+
+	panic("[Semantic] alvo de atribuicao invalido")
+}
+
+func assignMember(st SymbolTable, mem *MemberOp, val Variable) {
+	baseVal := mem.base.Evaluate(st)
+	inst, ok := baseVal.value.(*StructInstance)
+	if !ok || inst == nil {
+		panic(fmt.Sprintf("[Semantic] tentativa de atribuir ao campo '%s' em tipo nao struct '%s'", mem.field, baseVal.varType))
+	}
+
+	fieldVal, exists := inst.Fields[mem.field]
+	if !exists {
+		panic(fmt.Sprintf("[Semantic] struct '%s' nao possui o campo '%s'", inst.TypeName, mem.field))
+	}
+
+	if fieldVal.varType != val.varType {
+		panic(fmt.Sprintf("[Semantic] tipo incompativel no campo '%s': esperava '%s' mas recebeu '%s'", mem.field, fieldVal.varType, val.varType))
+	}
+
+	var newVal interface{} = val.value
+	if subInst, ok := val.value.(*StructInstance); ok && subInst != nil {
+		newVal = subInst.Clone()
+	}
+
+	inst.Fields[mem.field] = Variable{
+		value:    newVal,
+		varType:  fieldVal.varType,
+		isFunc:   false,
+		isReturn: false,
+	}
 }
 
 // ─────────────────────────────────────────────
@@ -665,10 +763,12 @@ func ParseFactor(lexer *Lexer) Node {
 		return inner
 	}
 
-	// Identificador ou Chamada de Função
+	// Identificador, Chamada de Função ou Acesso a Membro (Struct)
 	if lexer.next.tipo == "IDEN" {
 		idName := lexer.next.value
 		lexer.selectNext()
+
+		var expr Node
 
 		if lexer.next.tipo == "OPEN_PAR" {
 			lexer.selectNext()
@@ -693,13 +793,28 @@ func ParseFactor(lexer *Lexer) Node {
 				panic("[PARSER] Esperava ')' após argumentos da chamada de função")
 			}
 			lexer.selectNext()
-			return &FuncCall{
+			expr = &FuncCall{
 				value:    idName,
 				children: args,
 			}
+		} else {
+			expr = &IdentifierOp{value: idName}
 		}
 
-		return &IdentifierOp{value: idName}
+		for lexer.next.tipo == "DOT" {
+			lexer.selectNext()
+			if lexer.next.tipo != "IDEN" {
+				panic("[PARSER] Esperava identificador de campo após '.'")
+			}
+			fieldName := lexer.next.value
+			lexer.selectNext()
+			expr = &MemberOp{
+				base:  expr,
+				field: fieldName,
+			}
+		}
+
+		return expr
 	}
 
 	panic("[PARSER] token inesperado em factor: " + lexer.next.value)
@@ -849,6 +964,90 @@ func parseBlock(lexer *Lexer) Node {
 }
 
 // ─────────────────────────────────────────────
+// parseStructDeclaration
+// ─────────────────────────────────────────────
+
+func parseStructDeclaration(lexer *Lexer) *StructDec {
+	if lexer.next.tipo != "TYPE_DEF" {
+		panic("[PARSER] Esperava 'type'")
+	}
+	lexer.selectNext()
+
+	if lexer.next.tipo != "IDEN" {
+		panic("[PARSER] Esperava identificador após 'type'")
+	}
+	structName := lexer.next.value
+	lexer.selectNext()
+
+	if lexer.next.tipo != "STRUCT" {
+		panic("[PARSER] Esperava 'struct'")
+	}
+	lexer.selectNext()
+
+	if lexer.next.tipo == "END" {
+		panic("[PARSER] Esperava '{' na mesma linha após declaração da struct")
+	}
+	if lexer.next.tipo != "OPEN_BRA" {
+		panic("[PARSER] Esperava '{' para iniciar corpo da struct")
+	}
+	lexer.selectNext()
+
+	fields := []StructField{}
+	fieldSeen := make(map[string]bool)
+
+	for lexer.next.tipo != "CLOSE_BRA" && lexer.next.tipo != "EOF" {
+		if lexer.next.tipo == "END" {
+			lexer.selectNext()
+			continue
+		}
+
+		if lexer.next.tipo != "VAR" {
+			panic("[PARSER] Esperava 'var' ou '}' na definição da struct, recebeu: " + lexer.next.value)
+		}
+		lexer.selectNext()
+
+		if lexer.next.tipo != "IDEN" {
+			panic("[PARSER] Esperava identificador de campo após 'var'")
+		}
+		fieldName := lexer.next.value
+		if fieldSeen[fieldName] {
+			panic("[Semantic] campo duplicado na struct '" + structName + "': " + fieldName)
+		}
+		fieldSeen[fieldName] = true
+		lexer.selectNext()
+
+		if lexer.next.tipo != "TYPE" && lexer.next.tipo != "IDEN" {
+			panic("[PARSER] Esperava tipo após identificador do campo")
+		}
+		fieldType := lexer.next.value
+		lexer.selectNext()
+
+		if lexer.next.tipo == "ASSIGN" {
+			panic("[PARSER] inicializacao de atributo nao permitida na declaracao da struct")
+		}
+
+		fields = append(fields, StructField{
+			name:    fieldName,
+			varType: fieldType,
+		})
+
+		if lexer.next.tipo == "END" {
+			lexer.selectNext()
+		}
+	}
+
+	if lexer.next.tipo != "CLOSE_BRA" {
+		panic("[PARSER] Esperava '}' para fechar a struct")
+	}
+	lexer.selectNext()
+
+	return &StructDec{
+		name:   structName,
+		fields: fields,
+	}
+}
+
+// ─────────────────────────────────────────────
 // parseFuncDeclaration
 // ─────────────────────────────────────────────
 
@@ -878,7 +1077,7 @@ func parseFuncDeclaration(lexer *Lexer) *FuncDec {
 			paramId := &IdentifierOp{value: lexer.next.value}
 			lexer.selectNext()
 
-			if lexer.next.tipo != "TYPE" {
+			if lexer.next.tipo != "TYPE" && lexer.next.tipo != "IDEN" {
 				panic("[PARSER] Esperava tipo após identificador do parâmetro")
 			}
 			paramType := lexer.next.value
@@ -908,7 +1107,7 @@ func parseFuncDeclaration(lexer *Lexer) *FuncDec {
 	lexer.selectNext()
 
 	returnType := ""
-	if lexer.next.tipo == "TYPE" {
+	if lexer.next.tipo == "TYPE" || lexer.next.tipo == "IDEN" {
 		returnType = lexer.next.value
 		lexer.selectNext()
 	}
@@ -944,6 +1143,10 @@ func parseStatement(lexer *Lexer) Node {
 		return &NoOp{}
 	}
 
+	if lexer.next.tipo == "TYPE_DEF" {
+		return parseStructDeclaration(lexer)
+	}
+
 	if lexer.next.tipo == "OPEN_BRA" {
 		return parseBlock(lexer)
 	}
@@ -968,7 +1171,7 @@ func parseStatement(lexer *Lexer) Node {
 		iden := &IdentifierOp{value: lexer.next.value}
 		lexer.selectNext()
 
-		if lexer.next.tipo != "TYPE" {
+		if lexer.next.tipo != "TYPE" && lexer.next.tipo != "IDEN" {
 			panic("[PARSER] Esperava tipo após o identificador em 'var'")
 		}
 		varType := lexer.next.value
@@ -1058,24 +1261,10 @@ func parseStatement(lexer *Lexer) Node {
 		return &While{condition: cond, block: blk}
 	}
 
-	// Atribuição ou Chamada de Função
+	// Atribuição ou Chamada de Função ou Atribuição a Campo de Struct
 	if lexer.next.tipo == "IDEN" {
 		idToken := lexer.next
 		lexer.selectNext()
-
-		if lexer.next.tipo == "ASSIGN" {
-			lexer.selectNext()
-			exprRight := ParseBoolExpression(lexer)
-			identifier := &IdentifierOp{value: idToken.value}
-			assign := &Assignment{
-				childrenLeft:  identifier,
-				childrenRight: exprRight,
-			}
-			if lexer.next.tipo == "END" {
-				lexer.selectNext()
-			}
-			return assign
-		}
 
 		if lexer.next.tipo == "OPEN_PAR" {
 			lexer.selectNext()
@@ -1109,6 +1298,33 @@ func parseStatement(lexer *Lexer) Node {
 			}
 		}
 
+		var target Node = &IdentifierOp{value: idToken.value}
+		for lexer.next.tipo == "DOT" {
+			lexer.selectNext()
+			if lexer.next.tipo != "IDEN" {
+				panic("[PARSER] Esperava identificador de campo após '.'")
+			}
+			fieldName := lexer.next.value
+			lexer.selectNext()
+			target = &MemberOp{
+				base:  target,
+				field: fieldName,
+			}
+		}
+
+		if lexer.next.tipo == "ASSIGN" {
+			lexer.selectNext()
+			exprRight := ParseBoolExpression(lexer)
+			assign := &Assignment{
+				childrenLeft:  target,
+				childrenRight: exprRight,
+			}
+			if lexer.next.tipo == "END" {
+				lexer.selectNext()
+			}
+			return assign
+		}
+
 		panic("[PARSER] Esperava '=' ou '(' após identificador")
 	}
 
@@ -1126,6 +1342,11 @@ func parseProgram(lexer *Lexer) *Block {
 	for lexer.next.tipo != "EOF" {
 		if lexer.next.tipo == "END" {
 			lexer.selectNext()
+			continue
+		}
+		if lexer.next.tipo == "TYPE_DEF" {
+			sd := parseStructDeclaration(lexer)
+			block.children = append(block.children, sd)
 			continue
 		}
 		if lexer.next.tipo == "FUNC" {
