@@ -176,6 +176,44 @@ func (whileNode *While) Evaluate(st SymbolTable) int {
     return 0
 }
 
+type IfExpr struct {
+    condition Node
+    trueExpr  Node
+    falseExpr Node
+}
+
+func (ifExpr *IfExpr) Evaluate(st SymbolTable) int {
+    if ifExpr.condition.Evaluate(st) != 0 {
+        return ifExpr.trueExpr.Evaluate(st)
+    }
+    return ifExpr.falseExpr.Evaluate(st)
+}
+
+type ForLoop struct {
+    init      Node
+    condition Node
+    increment Node
+    block     Node
+}
+
+func (forNode *ForLoop) Evaluate(st SymbolTable) int {
+    if forNode.init != nil {
+        forNode.init.Evaluate(st)
+    }
+    for {
+        if forNode.condition != nil {
+            if forNode.condition.Evaluate(st) == 0 {
+                break
+            }
+        }
+        forNode.block.Evaluate(st)
+        if forNode.increment != nil {
+            forNode.increment.Evaluate(st)
+        }
+    }
+    return 0
+}
+
 type ReadOp struct{}
 
 func (readOp *ReadOp) Evaluate(st SymbolTable) int {
@@ -230,6 +268,68 @@ func ParseFactor(lexer *Lexer) Node {
         idVal := &IdentifierOp{value: lexer.next.value}
         lexer.selectNext()
         return idVal
+    }
+
+    if lexer.next.tipo == "IF" {
+        lexer.selectNext()
+        cond := ParseBoolExpression(lexer)
+
+        if lexer.next.tipo != "OPEN_BRA" {
+            panic("[PARSER] Esperava '{' após condição do if expression")
+        }
+        lexer.selectNext()
+
+        for lexer.next.tipo == "END" {
+            lexer.selectNext()
+        }
+        trueExpr := ParseBoolExpression(lexer)
+        for lexer.next.tipo == "END" {
+            lexer.selectNext()
+        }
+
+        if lexer.next.tipo != "CLOSE_BRA" {
+            panic("[PARSER] Esperava '}' após expressão verdadeira do if expression")
+        }
+        lexer.selectNext()
+
+        for lexer.next.tipo == "END" {
+            lexer.selectNext()
+        }
+
+        if lexer.next.tipo != "ELSE" {
+            panic("[PARSER] Esperava 'else' no if expression")
+        }
+        lexer.selectNext()
+
+        for lexer.next.tipo == "END" {
+            lexer.selectNext()
+        }
+
+        var falseExpr Node
+        if lexer.next.tipo == "IF" {
+            falseExpr = ParseFactor(lexer)
+        } else if lexer.next.tipo == "OPEN_BRA" {
+            lexer.selectNext()
+            for lexer.next.tipo == "END" {
+                lexer.selectNext()
+            }
+            falseExpr = ParseBoolExpression(lexer)
+            for lexer.next.tipo == "END" {
+                lexer.selectNext()
+            }
+            if lexer.next.tipo != "CLOSE_BRA" {
+                panic("[PARSER] Esperava '}' após expressão falsa do if expression")
+            }
+            lexer.selectNext()
+        } else {
+            panic("[PARSER] Esperava '{' após else no if expression")
+        }
+
+        return &IfExpr{
+            condition: cond,
+            trueExpr:  trueExpr,
+            falseExpr: falseExpr,
+        }
     }
 
     panic("[PARSER] token inesperado: " + lexer.next.value)
@@ -360,6 +460,86 @@ func parseBlock(lexer *Lexer) Node {
     return block
 }
 
+func hasSemicolonOnLine(le Lexer) bool {
+    for le.next.tipo != "EOF" && le.next.tipo != "END" {
+        if le.next.tipo == "SEMICOLON" {
+            return true
+        }
+        le.selectNext()
+    }
+    return false
+}
+
+func parseForClause(lexer *Lexer) Node {
+    if lexer.next.tipo == "SEMICOLON" || lexer.next.tipo == "OPEN_BRA" {
+        return &NoOp{}
+    }
+    if lexer.next.tipo == "IDEN" {
+        clone := *lexer
+        clone.selectNext()
+        if clone.next.tipo == "ASSIGN" {
+            idToken := lexer.next
+            lexer.selectNext()
+            lexer.selectNext()
+            expr := ParseBoolExpression(lexer)
+            return &Assignment{
+                childrenLeft:  &IdentifierOp{value: idToken.value},
+                childrenRight: expr,
+            }
+        }
+    }
+    return ParseBoolExpression(lexer)
+}
+
+func parseForLoop(lexer *Lexer) Node {
+    lexer.selectNext() // consome 'for'
+
+    if hasSemicolonOnLine(*lexer) {
+        init := parseForClause(lexer)
+        if lexer.next.tipo != "SEMICOLON" {
+            panic("[PARSER] Esperava ';' após inicialização do for")
+        }
+        lexer.selectNext()
+
+        var cond Node
+        if lexer.next.tipo == "SEMICOLON" {
+            cond = &IntVal{value: 1}
+        } else {
+            cond = ParseBoolExpression(lexer)
+        }
+        if lexer.next.tipo != "SEMICOLON" {
+            panic("[PARSER] Esperava ';' após condição do for")
+        }
+        lexer.selectNext()
+
+        inc := parseForClause(lexer)
+
+        if lexer.next.tipo == "END" || lexer.next.tipo != "OPEN_BRA" {
+            panic("[PARSER] Esperava '{' após incremento do for")
+        }
+        blk := parseBlock(lexer)
+
+        return &ForLoop{
+            init:      init,
+            condition: cond,
+            increment: inc,
+            block:     blk,
+        }
+    }
+
+    if lexer.next.tipo == "OPEN_BRA" {
+        blk := parseBlock(lexer)
+        return &While{condition: &IntVal{value: 1}, block: blk}
+    }
+
+    cond := ParseBoolExpression(lexer)
+    if lexer.next.tipo == "END" || lexer.next.tipo != "OPEN_BRA" {
+        panic("[PARSER] Esperava '{' após condição do while")
+    }
+    blk := parseBlock(lexer)
+    return &While{condition: cond, block: blk}
+}
+
 func parseStatement(lexer *Lexer) Node {
     if lexer.next.tipo == "END" {
         lexer.selectNext()
@@ -425,15 +605,7 @@ func parseStatement(lexer *Lexer) Node {
     }
 
     if lexer.next.tipo == "WHILE" {
-        lexer.selectNext()
-        cond := ParseBoolExpression(lexer)
-        
-        if lexer.next.tipo == "END" || lexer.next.tipo != "OPEN_BRA" {
-            panic("[PARSER] Esperava '{' após condição do while")
-        }
-        
-        blk := parseBlock(lexer)
-        return &While{condition: cond, block: blk}
+        return parseForLoop(lexer)
     }
 
     if lexer.next.tipo == "IDEN" {

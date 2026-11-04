@@ -71,6 +71,12 @@ func (le *Lexer) selectNext() {
 		return
 	}
 
+	if char == ';' {
+		le.next = Token{tipo: "SEMICOLON", value: ";"}
+		le.position++
+		return
+	}
+
 	if char == '&' {
 		if le.position+1 < len(le.source) && le.source[le.position+1] == '&' {
 			le.next = Token{tipo: "AND", value: "&&"}
