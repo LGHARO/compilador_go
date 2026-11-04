@@ -1,37 +1,49 @@
 package main
 
 // só serve como um wrapper
-type  Variable struct {
-	value  int
+type Variable struct {
+	value   int
+	isConst bool
 }
 
-
-//vai guardar as variaveis e seus valores aqui
+// vai guardar as variaveis e seus valores aqui
 type SymbolTable struct {
-	table   map[string]Variable
+	table map[string]Variable
 }
 
-//getter
-func (symbletable *SymbolTable) getter(variavel string) int{
+// getter
+func (symbletable *SymbolTable) getter(variavel string) int {
 	info, existe := symbletable.table[variavel]
 
-	if !existe{
+	if !existe {
 		panic("[Semantic] variavel nao existe no dicionario")
-	}else{
+	} else {
 		return info.value
 	}
-
-	
 }
 
-//setter
-func (symbletable *SymbolTable) setter(variavel string, valor int){
-	// cria o wrapper e adiciona o valor
-	varCriada := &Variable{
-		value: valor,
+// setter
+func (symbletable *SymbolTable) setter(variavel string, valor int) {
+	info, existe := symbletable.table[variavel]
+	if existe && info.isConst {
+		panic("[Semantic] cannot change the value of " + variavel)
 	}
-	
-	//adiciona na table
-	symbletable.table[variavel] = *varCriada
-	
+
+	symbletable.table[variavel] = Variable{
+		value:   valor,
+		isConst: false,
+	}
+}
+
+// createConst
+func (symbletable *SymbolTable) createConst(variavel string, valor int) {
+	info, existe := symbletable.table[variavel]
+	if existe && info.isConst {
+		panic("[Semantic] cannot change the value of " + variavel)
+	}
+
+	symbletable.table[variavel] = Variable{
+		value:   valor,
+		isConst: true,
+	}
 }

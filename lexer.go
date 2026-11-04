@@ -111,7 +111,9 @@ func (le *Lexer) selectNext() {
 
 		if idenStr == "Println" {
 			le.next = Token{tipo: "PRINT", value: idenStr}
-		}else{
+		} else if idenStr == "const" {
+			le.next = Token{tipo: "CONST", value: idenStr}
+		} else {
 			le.next = Token{tipo: "IDEN", value: idenStr}
 		}
 		return

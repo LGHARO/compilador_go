@@ -90,6 +90,16 @@ func (assignment *Assignment) Evaluate(st SymbolTable) int {
     st.setter(assignment.childrenLeft.(*IdentifierOp).value, assignment.childrenRight.Evaluate(st))
     return 0
 }
+
+type ConstDec struct {
+    id    string
+    value Node
+}
+
+func (constDec *ConstDec) Evaluate(st SymbolTable) int {
+    st.createConst(constDec.id, constDec.value.Evaluate(st))
+    return 0
+}
 type Parser struct {
     lexer Lexer
 }
@@ -260,6 +270,33 @@ func parseStatement(lexer *Lexer) Node {
         }
 
         return &PrintOp{children: expr}
+    }
+
+    // Se for declaração de constante imutável: const <id> = <expr>
+    if lexer.next.tipo == "CONST" {
+        lexer.selectNext() // Consome "const"
+
+        if lexer.next.tipo != "IDEN" {
+            panic("[PARSER] Esperava identificador após const")
+        }
+        idToken := lexer.next
+        lexer.selectNext() // Consome IDEN
+
+        if lexer.next.tipo != "ASSIGN" {
+            panic("[PARSER] Constante deve ser inicializada na declaração")
+        }
+        lexer.selectNext() // Consome "="
+
+        exprRight := ParseExpression(lexer)
+
+        if lexer.next.tipo == "END" {
+            lexer.selectNext()
+        }
+
+        return &ConstDec{
+            id:    idToken.value,
+            value: exprRight,
+        }
     }
 
     // Se começar com um Identificador, pode ser uma Atribuição
