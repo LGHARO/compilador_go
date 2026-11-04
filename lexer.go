@@ -140,10 +140,32 @@ func (le *Lexer) selectNext() {
 		return
 	}
 
+	// Literal float começando com ponto: .5
+	if char == '.' && le.position+1 < len(le.source) && unicode.IsDigit(rune(le.source[le.position+1])) {
+		startPos := le.position
+		le.position++ // pula '.'
+		for le.position < len(le.source) && unicode.IsDigit(rune(le.source[le.position])) {
+			le.position++
+		}
+		floatStr := le.source[startPos:le.position]
+		le.next = Token{tipo: "FLOAT", value: floatStr}
+		return
+	}
+
 	if unicode.IsDigit(rune(char)) {
 		startPos := le.position
 		for le.position < len(le.source) && unicode.IsDigit(rune(le.source[le.position])) {
 			le.position++
+		}
+		// Se houver ponto decimal seguido de dígitos: 1.6
+		if le.position < len(le.source) && le.source[le.position] == '.' && (le.position+1 >= len(le.source) || unicode.IsDigit(rune(le.source[le.position+1]))) {
+			le.position++ // pula '.'
+			for le.position < len(le.source) && unicode.IsDigit(rune(le.source[le.position])) {
+				le.position++
+			}
+			floatStr := le.source[startPos:le.position]
+			le.next = Token{tipo: "FLOAT", value: floatStr}
+			return
 		}
 		numStr := le.source[startPos:le.position]
 		le.next = Token{tipo: "INT", value: numStr}
@@ -174,7 +196,7 @@ func (le *Lexer) selectNext() {
 			le.next = Token{tipo: "VAR", value: idenStr}
 		case "true", "false":
 			le.next = Token{tipo: "BOOL", value: idenStr}
-		case "string", "int", "bool":
+		case "string", "int", "bool", "float":
 			le.next = Token{tipo: "TYPE", value: idenStr}
 		default:
 			le.next = Token{tipo: "IDEN", value: idenStr}

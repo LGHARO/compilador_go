@@ -29,6 +29,8 @@ func (st *SymbolTable) createVariable(nome string, tipo string) {
 	switch tipo {
 	case "int":
 		zeroVal = 0
+	case "float":
+		zeroVal = 0.0
 	case "string":
 		zeroVal = ""
 	case "bool":

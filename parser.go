@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 )
 
@@ -23,6 +24,94 @@ type IntVal struct {
 
 func (n *IntVal) Evaluate(st SymbolTable) Variable {
 	return Variable{value: n.value, varType: "int"}
+}
+
+// ─────────────────────────────────────────────
+// FloatVal
+// ─────────────────────────────────────────────
+
+type FloatVal struct {
+	value float64
+}
+
+func (n *FloatVal) Evaluate(st SymbolTable) Variable {
+	return Variable{value: n.value, varType: "float"}
+}
+
+// ─────────────────────────────────────────────
+// CastOp
+// ─────────────────────────────────────────────
+
+type CastOp struct {
+	targetType string
+	children   Node
+}
+
+func (n *CastOp) Evaluate(st SymbolTable) Variable {
+	val := n.children.Evaluate(st)
+
+	switch n.targetType {
+	case "int":
+		switch val.varType {
+		case "int":
+			return Variable{value: val.value.(int), varType: "int"}
+		case "float":
+			rounded := int(math.Round(val.value.(float64)))
+			return Variable{value: rounded, varType: "int"}
+		case "bool":
+			return Variable{value: val.value.(int), varType: "int"}
+		case "string":
+			i, err := strconv.Atoi(val.value.(string))
+			if err != nil {
+				panic("[Semantic] erro ao converter string para int: " + val.value.(string))
+			}
+			return Variable{value: i, varType: "int"}
+		}
+	case "float":
+		switch val.varType {
+		case "float":
+			return Variable{value: val.value.(float64), varType: "float"}
+		case "int":
+			return Variable{value: float64(val.value.(int)), varType: "float"}
+		case "bool":
+			return Variable{value: float64(val.value.(int)), varType: "float"}
+		case "string":
+			f, err := strconv.ParseFloat(val.value.(string), 64)
+			if err != nil {
+				panic("[Semantic] erro ao converter string para float: " + val.value.(string))
+			}
+			return Variable{value: f, varType: "float"}
+		}
+	case "string":
+		return Variable{value: varToString(val), varType: "string"}
+	case "bool":
+		switch val.varType {
+		case "bool":
+			return Variable{value: val.value.(int), varType: "bool"}
+		case "int":
+			b := 0
+			if val.value.(int) != 0 {
+				b = 1
+			}
+			return Variable{value: b, varType: "bool"}
+		case "float":
+			b := 0
+			if val.value.(float64) != 0.0 {
+				b = 1
+			}
+			return Variable{value: b, varType: "bool"}
+		case "string":
+			b := 0
+			if val.value.(string) != "" && val.value.(string) != "false" {
+				b = 1
+			}
+			return Variable{value: b, varType: "bool"}
+		}
+	default:
+		panic("[Semantic] tipo de cast desconhecido: " + n.targetType)
+	}
+
+	panic("[Semantic] cast inválido de " + val.varType + " para " + n.targetType)
 }
 
 // ─────────────────────────────────────────────
@@ -58,20 +147,37 @@ type UnOp struct {
 	children Node
 }
 
+func isNumeric(v Variable) bool {
+	return v.varType == "int" || v.varType == "float"
+}
+
+func toFloat(v Variable) float64 {
+	if v.varType == "int" {
+		return float64(v.value.(int))
+	}
+	return v.value.(float64)
+}
+
 func (n *UnOp) Evaluate(st SymbolTable) Variable {
 	child := n.children.Evaluate(st)
 
 	switch n.value {
 	case "+":
-		if child.varType != "int" {
-			panic("[Semantic] operador '+' unário requer int, recebeu " + child.varType)
+		if child.varType == "int" {
+			return Variable{value: child.value.(int), varType: "int"}
 		}
-		return Variable{value: child.value.(int), varType: "int"}
+		if child.varType == "float" {
+			return Variable{value: child.value.(float64), varType: "float"}
+		}
+		panic("[Semantic] operador '+' unário requer int ou float, recebeu " + child.varType)
 	case "-":
-		if child.varType != "int" {
-			panic("[Semantic] operador '-' unário requer int, recebeu " + child.varType)
+		if child.varType == "int" {
+			return Variable{value: -child.value.(int), varType: "int"}
 		}
-		return Variable{value: -child.value.(int), varType: "int"}
+		if child.varType == "float" {
+			return Variable{value: -child.value.(float64), varType: "float"}
+		}
+		panic("[Semantic] operador '-' unário requer int ou float, recebeu " + child.varType)
 	case "!":
 		if child.varType != "bool" {
 			panic("[Semantic] operador '!' requer bool, recebeu " + child.varType)
@@ -144,26 +250,56 @@ func (n *BinOp) Evaluate(st SymbolTable) Variable {
 		if left.varType == "int" && right.varType == "int" {
 			return Variable{value: left.value.(int) + right.value.(int), varType: "int"}
 		}
-		panic("[Semantic] '+' requer dois int, duas strings, ou string com qualquer tipo; recebeu " + left.varType + " e " + right.varType)
-	case "-":
-		requireBothInt(left, right, "-")
-		return Variable{value: left.value.(int) - right.value.(int), varType: "int"}
-	case "*":
-		requireBothInt(left, right, "*")
-		return Variable{value: left.value.(int) * right.value.(int), varType: "int"}
-	case "/":
-		requireBothInt(left, right, "/")
-		if right.value.(int) == 0 {
-			panic("[Semantic] divisão por zero")
+		// Operação envolvendo float
+		if isNumeric(left) && isNumeric(right) {
+			return Variable{value: toFloat(left) + toFloat(right), varType: "float"}
 		}
-		return Variable{value: left.value.(int) / right.value.(int), varType: "int"}
+		panic("[Semantic] '+' requer números ou strings; recebeu " + left.varType + " e " + right.varType)
+	case "-":
+		if left.varType == "int" && right.varType == "int" {
+			return Variable{value: left.value.(int) - right.value.(int), varType: "int"}
+		}
+		if isNumeric(left) && isNumeric(right) {
+			return Variable{value: toFloat(left) - toFloat(right), varType: "float"}
+		}
+		panic("[Semantic] '-' requer números; recebeu " + left.varType + " e " + right.varType)
+	case "*":
+		if left.varType == "int" && right.varType == "int" {
+			return Variable{value: left.value.(int) * right.value.(int), varType: "int"}
+		}
+		if isNumeric(left) && isNumeric(right) {
+			return Variable{value: toFloat(left) * toFloat(right), varType: "float"}
+		}
+		panic("[Semantic] '*' requer números; recebeu " + left.varType + " e " + right.varType)
+	case "/":
+		if left.varType == "int" && right.varType == "int" {
+			if right.value.(int) == 0 {
+				panic("[Semantic] divisão por zero")
+			}
+			return Variable{value: left.value.(int) / right.value.(int), varType: "int"}
+		}
+		if isNumeric(left) && isNumeric(right) {
+			r := toFloat(right)
+			if r == 0.0 {
+				panic("[Semantic] divisão por zero")
+			}
+			return Variable{value: toFloat(left) / r, varType: "float"}
+		}
+		panic("[Semantic] '/' requer números; recebeu " + left.varType + " e " + right.varType)
 	case "==":
+		if isNumeric(left) && isNumeric(right) {
+			result := 0
+			if toFloat(left) == toFloat(right) {
+				result = 1
+			}
+			return Variable{value: result, varType: "bool"}
+		}
 		if left.varType != right.varType {
 			panic("[Semantic] '==' requer operandos do mesmo tipo; recebeu " + left.varType + " e " + right.varType)
 		}
 		result := 0
 		switch left.varType {
-		case "int", "bool":
+		case "bool":
 			if left.value.(int) == right.value.(int) {
 				result = 1
 			}
@@ -182,12 +318,14 @@ func (n *BinOp) Evaluate(st SymbolTable) Variable {
 			}
 			return Variable{value: result, varType: "bool"}
 		}
-		requireBothInt(left, right, "<")
-		result := 0
-		if left.value.(int) < right.value.(int) {
-			result = 1
+		if isNumeric(left) && isNumeric(right) {
+			result := 0
+			if toFloat(left) < toFloat(right) {
+				result = 1
+			}
+			return Variable{value: result, varType: "bool"}
 		}
-		return Variable{value: result, varType: "bool"}
+		panic("[Semantic] '<' requer números ou strings; recebeu " + left.varType + " e " + right.varType)
 	case ">":
 		// Comparação de int ou string (lexicográfica)
 		if left.varType == "string" && right.varType == "string" {
@@ -197,12 +335,14 @@ func (n *BinOp) Evaluate(st SymbolTable) Variable {
 			}
 			return Variable{value: result, varType: "bool"}
 		}
-		requireBothInt(left, right, ">")
-		result := 0
-		if left.value.(int) > right.value.(int) {
-			result = 1
+		if isNumeric(left) && isNumeric(right) {
+			result := 0
+			if toFloat(left) > toFloat(right) {
+				result = 1
+			}
+			return Variable{value: result, varType: "bool"}
 		}
-		return Variable{value: result, varType: "bool"}
+		panic("[Semantic] '>' requer números ou strings; recebeu " + left.varType + " e " + right.varType)
 	}
 	panic("[Semantic] operador binário inválido: " + n.value)
 }
@@ -226,6 +366,8 @@ func varToString(v Variable) string {
 		return v.value.(string)
 	case "int":
 		return strconv.Itoa(v.value.(int))
+	case "float":
+		return fmt.Sprintf("%v", v.value.(float64))
 	case "bool":
 		if v.value.(int) != 0 {
 			return "true"
@@ -261,6 +403,8 @@ func (n *PrintOp) Evaluate(st SymbolTable) Variable {
 	switch val.varType {
 	case "int":
 		fmt.Println(val.value.(int))
+	case "float":
+		fmt.Println(val.value.(float64))
 	case "bool":
 		if val.value.(int) != 0 {
 			fmt.Println("true")
@@ -426,6 +570,16 @@ func ParseFactor(lexer *Lexer) Node {
 		return &IntVal{value: num}
 	}
 
+	// Literal float
+	if lexer.next.tipo == "FLOAT" {
+		num, err := strconv.ParseFloat(lexer.next.value, 64)
+		if err != nil {
+			panic("[PARSER] número float inválido: " + lexer.next.value)
+		}
+		lexer.selectNext()
+		return &FloatVal{value: num}
+	}
+
 	// Literal booleano
 	if lexer.next.tipo == "BOOL" {
 		val := 0
@@ -481,8 +635,26 @@ func ParseFactor(lexer *Lexer) Node {
 		return &ReadStringOp{}
 	}
 
-	// Parênteses
+	// Parênteses ou Cast: (type) expr
 	if lexer.next.tipo == "OPEN_PAR" {
+		clone := *lexer
+		clone.selectNext()
+		if clone.next.tipo == "TYPE" {
+			targetType := clone.next.value
+			clone.selectNext()
+			if clone.next.tipo == "CLOSE_PAR" {
+				lexer.selectNext() // consome '('
+				lexer.selectNext() // consome TYPE
+				lexer.selectNext() // consome ')'
+
+				child := ParseFactor(lexer)
+				return &CastOp{
+					targetType: targetType,
+					children:   child,
+				}
+			}
+		}
+
 		lexer.selectNext()
 		inner := ParseBoolExpression(lexer)
 		if lexer.next.tipo != "CLOSE_PAR" {
