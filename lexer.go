@@ -140,35 +140,34 @@ func (le *Lexer) selectNext() {
 		return
 	}
 
-	// Literal float começando com ponto: .5
-	if char == '.' && le.position+1 < len(le.source) && unicode.IsDigit(rune(le.source[le.position+1])) {
+	if unicode.IsDigit(rune(char)) || (char == '.' && le.position+1 < len(le.source) && unicode.IsDigit(rune(le.source[le.position+1]))) {
 		startPos := le.position
-		le.position++ // pula '.'
-		for le.position < len(le.source) && unicode.IsDigit(rune(le.source[le.position])) {
-			le.position++
-		}
-		floatStr := le.source[startPos:le.position]
-		le.next = Token{tipo: "FLOAT", value: floatStr}
-		return
-	}
+		dotCount := 0
 
-	if unicode.IsDigit(rune(char)) {
-		startPos := le.position
-		for le.position < len(le.source) && unicode.IsDigit(rune(le.source[le.position])) {
-			le.position++
-		}
-		// Se houver ponto decimal seguido de dígitos: 1.6
-		if le.position < len(le.source) && le.source[le.position] == '.' && (le.position+1 >= len(le.source) || unicode.IsDigit(rune(le.source[le.position+1]))) {
-			le.position++ // pula '.'
-			for le.position < len(le.source) && unicode.IsDigit(rune(le.source[le.position])) {
+		for le.position < len(le.source) {
+			c := le.source[le.position]
+			if unicode.IsDigit(rune(c)) {
 				le.position++
+			} else if c == '.' {
+				dotCount++
+				le.position++
+			} else if unicode.IsLetter(rune(c)) {
+				panic("[Lexer] formato de número inválido: letra em número")
+			} else {
+				break
 			}
-			floatStr := le.source[startPos:le.position]
-			le.next = Token{tipo: "FLOAT", value: floatStr}
-			return
 		}
+
+		if dotCount > 1 {
+			panic("[Lexer] formato de número inválido: múltiplos pontos decimais")
+		}
+
 		numStr := le.source[startPos:le.position]
-		le.next = Token{tipo: "INT", value: numStr}
+		if dotCount == 1 {
+			le.next = Token{tipo: "FLOAT", value: numStr}
+		} else {
+			le.next = Token{tipo: "INT", value: numStr}
+		}
 		return
 	}
 

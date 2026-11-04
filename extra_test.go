@@ -145,3 +145,22 @@ func TestExtraV22NestedCast(t *testing.T) {
 		t.Fatalf("expected:\n%s\ngot:\n%s", expected, out)
 	}
 }
+
+func TestExtraV22InvalidNumberFormat(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatalf("expected panic on invalid number format")
+		}
+		msg, ok := r.(string)
+		if !ok || !strings.Contains(msg, "[Lexer]") {
+			t.Fatalf("expected [Lexer] panic, got: %v", r)
+		}
+	}()
+
+	code := `// Invalid Number Format
+var n float = 5.1.2
+`
+	runCode(code)
+}
+
