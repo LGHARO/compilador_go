@@ -57,6 +57,11 @@ func (le *Lexer) selectNext() {
 
 	// Se o caractere é igual a '*'
 	if char == '*' {
+		if le.position+1 < len(le.source) && le.source[le.position+1] == '*' {
+			le.next = Token{tipo: "POWER", value: "**"}
+			le.position += 2
+			return
+		}
 		le.next = Token{tipo: "MULT", value: "*"}
 		le.position++
 		return
@@ -103,7 +108,31 @@ func (le *Lexer) selectNext() {
 
 }
 
-func ParseFactor(lexer *Lexer) int {
+func intPow(base, exp int) int {
+	if exp < 0 {
+		if base == 1 {
+			return 1
+		}
+		if base == -1 {
+			if exp%2 == 0 {
+				return 1
+			}
+			return -1
+		}
+		return 0
+	}
+	res := 1
+	for exp > 0 {
+		if exp%2 == 1 {
+			res *= base
+		}
+		base *= base
+		exp /= 2
+	}
+	return res
+}
+
+func ParseBase(lexer *Lexer) int {
 	// 1. Se for um número, consome e retorna o valor
 	if lexer.next.tipo == "INT" {
 		num, err := strconv.Atoi(lexer.next.value)
@@ -113,17 +142,6 @@ func ParseFactor(lexer *Lexer) int {
 		lexer.selectNext() // Consome o INT
 		return num
 	}
-
-	if lexer.next.tipo == "MINUS" ||  lexer.next.tipo == "PLUS"{
-		if  lexer.next.tipo == "MINUS" {
-			lexer.selectNext()
-			return - ParseFactor(lexer)
-		}else{
-			lexer.selectNext()
-			return + ParseFactor(lexer)
-		}
-		
-	} 
 
 	// 2. Se for um parênteses, resolve a expressão interna
 	if lexer.next.tipo == "OPEN_PAR" {
@@ -141,6 +159,32 @@ func ParseFactor(lexer *Lexer) int {
 	}
 
 	panic("[PARSER] token inesperado, esperava número ou '(': " + lexer.next.value)
+}
+
+func ParsePower(lexer *Lexer) int {
+	base := ParseBase(lexer)
+
+	if lexer.next.tipo == "POWER" {
+		lexer.selectNext()
+		exp := ParseFactor(lexer)
+		return intPow(base, exp)
+	}
+
+	return base
+}
+
+func ParseFactor(lexer *Lexer) int {
+	if lexer.next.tipo == "MINUS" || lexer.next.tipo == "PLUS" {
+		if lexer.next.tipo == "MINUS" {
+			lexer.selectNext()
+			return -ParseFactor(lexer)
+		} else {
+			lexer.selectNext()
+			return +ParseFactor(lexer)
+		}
+	}
+
+	return ParsePower(lexer)
 }
 
 func ParseTerm(lexer *Lexer) int {
