@@ -44,8 +44,9 @@ func main() {
 	AST := p.run()
 
 	st := &SymbolTable{
-		table:  make(map[string]Variable),
-		parent: nil,
+		table:   make(map[string]Variable),
+		parent:  nil,
+		structs: make(map[string]*StructTypeDef),
 	}
 	AST.Evaluate(*st)
 }

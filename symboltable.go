@@ -90,21 +90,35 @@ func (st *SymbolTable) getRoot() *SymbolTable {
 // createStructType registra a definição de uma nova struct no escopo raiz
 func (st *SymbolTable) createStructType(name string, def *StructTypeDef) {
 	root := st.getRoot()
-	if root.structs == nil {
-		root.structs = make(map[string]*StructTypeDef)
-	}
-	if _, exists := root.structs[name]; exists {
+	if root.isStructType(name) {
 		panic("[Semantic] struct ja declarada: " + name)
 	}
-	root.structs[name] = def
+	if root.structs != nil {
+		root.structs[name] = def
+	}
+	if root.table != nil {
+		root.table["::struct::"+name] = Variable{
+			value:    def,
+			varType:  "struct_def",
+			isFunc:   false,
+			isReturn: false,
+		}
+	}
 }
 
 // getStructType busca a definição da struct no escopo raiz
 func (st *SymbolTable) getStructType(name string) *StructTypeDef {
 	root := st.getRoot()
 	if root.structs != nil {
-		if def, exists := root.structs[name]; exists {
+		if def, exists := root.structs[name]; exists && def != nil {
 			return def
+		}
+	}
+	if root.table != nil {
+		if v, exists := root.table["::struct::"+name]; exists {
+			if def, ok := v.value.(*StructTypeDef); ok && def != nil {
+				return def
+			}
 		}
 	}
 	panic("[Semantic] tipo struct desconhecido: " + name)
@@ -114,8 +128,14 @@ func (st *SymbolTable) getStructType(name string) *StructTypeDef {
 func (st *SymbolTable) isStructType(name string) bool {
 	root := st.getRoot()
 	if root.structs != nil {
-		_, exists := root.structs[name]
-		return exists
+		if _, exists := root.structs[name]; exists {
+			return true
+		}
+	}
+	if root.table != nil {
+		if _, exists := root.table["::struct::"+name]; exists {
+			return true
+		}
 	}
 	return false
 }

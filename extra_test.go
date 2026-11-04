@@ -41,9 +41,8 @@ func runCodeStr(code string) {
 	AST := p.run()
 
 	st := &SymbolTable{
-		table:   make(map[string]Variable),
-		parent:  nil,
-		structs: make(map[string]*StructTypeDef),
+		table:  make(map[string]Variable),
+		parent: nil,
 	}
 	AST.Evaluate(*st)
 }
@@ -66,6 +65,40 @@ func main() {
 	})
 
 	expected := "1"
+	if out != expected {
+		t.Fatalf("Esperava saída '%s', mas obteve '%s'", expected, out)
+	}
+}
+
+// TestUserTest1ValidInput verifica o Test 1 fornecido pelo usuário (Student com string, int e bool)
+func TestUserTest1ValidInput(t *testing.T) {
+	code := `
+// Struct implementation
+
+type Student struct {
+  var name string
+  var age int
+  var grade bool
+}
+
+func main() {
+  var student1 Student
+  student1.name = "John Doe"
+  student1.age = 20
+  student1.grade = true
+
+  student1.age = student1.age + 1
+  Println(student1.name)
+  Println(student1.age)
+  Println(student1.grade)
+
+}
+`
+	out := captureOutputStr(func() {
+		runCodeStr(code)
+	})
+
+	expected := "John Doe\n21\ntrue"
 	if out != expected {
 		t.Fatalf("Esperava saída '%s', mas obteve '%s'", expected, out)
 	}
