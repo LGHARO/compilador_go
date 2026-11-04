@@ -471,7 +471,7 @@ func hasSemicolonOnLine(le Lexer) bool {
 }
 
 func parseForClause(lexer *Lexer) Node {
-    if lexer.next.tipo == "SEMICOLON" || lexer.next.tipo == "OPEN_BRA" {
+    if lexer.next.tipo == "SEMICOLON" || lexer.next.tipo == "OPEN_BRA" || lexer.next.tipo == "CLOSE_PAR" {
         return &NoOp{}
     }
     if lexer.next.tipo == "IDEN" {
@@ -495,6 +495,12 @@ func parseForLoop(lexer *Lexer) Node {
     lexer.selectNext() // consome 'for'
 
     if hasSemicolonOnLine(*lexer) {
+        hasParens := false
+        if lexer.next.tipo == "OPEN_PAR" {
+            hasParens = true
+            lexer.selectNext()
+        }
+
         init := parseForClause(lexer)
         if lexer.next.tipo != "SEMICOLON" {
             panic("[PARSER] Esperava ';' após inicialização do for")
@@ -513,6 +519,13 @@ func parseForLoop(lexer *Lexer) Node {
         lexer.selectNext()
 
         inc := parseForClause(lexer)
+
+        if hasParens {
+            if lexer.next.tipo != "CLOSE_PAR" {
+                panic("[PARSER] Esperava ')' após incremento do for")
+            }
+            lexer.selectNext()
+        }
 
         if lexer.next.tipo == "END" || lexer.next.tipo != "OPEN_BRA" {
             panic("[PARSER] Esperava '{' após incremento do for")

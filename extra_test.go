@@ -60,6 +60,27 @@ for i = 0; i < n; i = i + 1 {
 	}
 }
 
+func TestExtraV21ProfessorTest1(t *testing.T) {
+	code := `// For implementation
+n = 5
+y = 1
+i = 0
+for (i = 0; i < n; i = i + 1) {
+  y = y * (i + 1)
+}
+Println(if i == n { y } else { n })
+Println(if i == n+1 { y } else { n })
+`
+	out, err := runCode(code)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := "120\n5"
+	if out != expected {
+		t.Fatalf("expected:\n%s\ngot:\n%s", expected, out)
+	}
+}
+
 func TestExtraV21ElseBranch(t *testing.T) {
 	code := `x = 1
 n = if x > 2 { 5 } else { 3 }
