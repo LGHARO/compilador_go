@@ -23,6 +23,12 @@ func (le *Lexer) selectNext() {
 
 	char := le.source[le.position]
 
+	if char == ',' {
+		le.next = Token{tipo: "COMMA", value: ","}
+		le.position++
+		return
+	}
+
 	if char == '+' {
 		le.next = Token{tipo: "PLUS", value: "+"}
 		le.position++
@@ -172,6 +178,10 @@ func (le *Lexer) selectNext() {
 			le.next = Token{tipo: "READ_STR", value: idenStr}
 		case "var":
 			le.next = Token{tipo: "VAR", value: idenStr}
+		case "func":
+			le.next = Token{tipo: "FUNC", value: idenStr}
+		case "return":
+			le.next = Token{tipo: "RETURN", value: idenStr}
 		case "true", "false":
 			le.next = Token{tipo: "BOOL", value: idenStr}
 		case "string", "int", "bool":

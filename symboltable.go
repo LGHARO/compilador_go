@@ -1,42 +1,58 @@
 package main
 
-// ============================================================================
-// Roteiro 8 - Geração de Código x86 (NASM)
-// ============================================================================
-// Mudanças realizadas:
-// 1. Adicionado o atributo shift na struct Variable para armazenar o deslocamento
-//    relativo a EBP na pilha (ex: 4, 8, 12...).
-// 2. Adicionado o atributo currentShift na struct SymbolTable para acumular o
-//    deslocamento das variáveis declaradas.
-// 3. Atualizado o método createVariable() para incrementar currentShift em 4 bytes
-//    para cada nova variável inteira/booleana declarada e associar esse shift.
-// 4. Atualizado o método setter() para preservar o shift original da variável
-//    ao atualizar seu valor.
-// ============================================================================
+import "fmt"
 
-// Variable armazena um valor com seu tipo correspondente e seu deslocamento na pilha
+// Variable armazena um valor com seu tipo correspondente, deslocamento na pilha e flags de função/parâmetro
 type Variable struct {
-	value   interface{} // int, string ou bool (representado como int: 0=false, 1=true)
-	varType string      // "int", "string" ou "bool"
-	shift   int         // deslocamento relativo ao EBP em bytes (ex: 4 para [EBP-4])
+	value    interface{} // int, string, bool ou referência ao nó *FuncDec
+	varType  string      // "int", "string", "bool" ou tipo de retorno da função
+	shift    int         // deslocamento relativo ao EBP em bytes (ex: 4 para [ebp-4] ou 8 para [ebp+8])
+	isParam  bool        // true se for parâmetro de função ([ebp+shift])
+	isGlobal bool        // true se for variável global ([_var_name])
+	isFunc   bool        // true se for função
+	isReturn bool        // true se for valor originado de um return statement
 }
 
-// SymbolTable guarda as variáveis, seus valores e deslocamentos na pilha
+// Operand retorna a string do operando Assembly NASM correspondente à variável
+func (v Variable) Operand(name string) string {
+	if v.isGlobal {
+		return fmt.Sprintf("[_var_%s]", name)
+	}
+	if v.isParam {
+		return fmt.Sprintf("[ebp+%d]", v.shift)
+	}
+	return fmt.Sprintf("[ebp-%d]", v.shift)
+}
+
+// SymbolTable guarda as variáveis, funções e deslocamentos na pilha em escopos encadeados
 type SymbolTable struct {
 	table        map[string]Variable
-	currentShift int // deslocamento acumulado na pilha
+	parent       *SymbolTable
+	currentShift int // deslocamento acumulado na pilha para variáveis locais
 }
 
-// getter retorna a Variable completa (com valor, tipo e shift)
+// getRoot retorna o escopo raiz (global)
+func (st *SymbolTable) getRoot() *SymbolTable {
+	curr := st
+	for curr.parent != nil {
+		curr = curr.parent
+	}
+	return curr
+}
+
+// getter retorna a Variable buscando no escopo atual e recursivamente nos pais
 func (st *SymbolTable) getter(variavel string) Variable {
 	info, existe := st.table[variavel]
-	if !existe {
-		panic("[Semantic] variavel nao declarada: " + variavel)
+	if existe {
+		return info
 	}
-	return info
+	if st.parent != nil {
+		return st.parent.getter(variavel)
+	}
+	panic("[Semantic] variavel nao declarada: " + variavel)
 }
 
-// createVariable declara uma nova variável com o tipo dado e aloca 4 bytes de deslocamento na pilha
+// createVariable declara uma nova variável no escopo atual; panics se já existir no escopo atual
 func (st *SymbolTable) createVariable(nome string, tipo string) {
 	if _, existe := st.table[nome]; existe {
 		panic("[Semantic] variavel ja declarada: " + nome)
@@ -52,18 +68,84 @@ func (st *SymbolTable) createVariable(nome string, tipo string) {
 	default:
 		panic("[Semantic] tipo desconhecido: " + tipo)
 	}
-	st.currentShift += 4
-	st.table[nome] = Variable{value: zeroVal, varType: tipo, shift: st.currentShift}
+
+	isGlobal := (st.parent == nil && hasProgramFunctions)
+	shift := 0
+	if !isGlobal {
+		st.currentShift += 4
+		shift = st.currentShift
+	} else {
+		CodeAddGlobalVar(nome)
+	}
+
+	st.table[nome] = Variable{
+		value:    zeroVal,
+		varType:  tipo,
+		shift:    shift,
+		isParam:  false,
+		isGlobal: isGlobal,
+		isFunc:   false,
+		isReturn: false,
+	}
 }
 
-// setter atribui um valor a uma variável já declarada, verificando tipos e preservando o shift
+// createParam declara um parâmetro com deslocamento positivo na pilha ([ebp+offset])
+func (st *SymbolTable) createParam(nome string, tipo string, offset int) {
+	if _, existe := st.table[nome]; existe {
+		panic("[Semantic] parametro ja declarado: " + nome)
+	}
+	st.table[nome] = Variable{
+		value:    0,
+		varType:  tipo,
+		shift:    offset,
+		isParam:  true,
+		isGlobal: false,
+		isFunc:   false,
+		isReturn: false,
+	}
+}
+
+// createFunction declara uma função na tabela raiz (global)
+func (st *SymbolTable) createFunction(nome string, returnType string, funcNode interface{}) {
+	root := st.getRoot()
+	if _, existe := root.table[nome]; existe {
+		panic("[Semantic] funcao ja declarada: " + nome)
+	}
+	root.table[nome] = Variable{
+		value:    funcNode,
+		varType:  returnType,
+		shift:    0,
+		isParam:  false,
+		isGlobal: false,
+		isFunc:   true,
+		isReturn: false,
+	}
+}
+
+// setter atribui um valor a uma variável já declarada, buscando no escopo onde foi definida
 func (st *SymbolTable) setter(nome string, val Variable) {
 	existente, existe := st.table[nome]
-	if !existe {
-		panic("[Semantic] variavel nao declarada: " + nome)
+	if existe {
+		if existente.isFunc {
+			panic("[Semantic] nao e possivel reatribuir valor a uma funcao: " + nome)
+		}
+		if existente.varType != val.varType {
+			panic("[Semantic] tipo incompativel: esperava '" + existente.varType + "' mas recebeu '" + val.varType + "'")
+		}
+		st.table[nome] = Variable{
+			value:    val.value,
+			varType:  existente.varType,
+			shift:    existente.shift,
+			isParam:  existente.isParam,
+			isGlobal: existente.isGlobal,
+			isFunc:   false,
+			isReturn: false,
+		}
+		return
 	}
-	if existente.varType != val.varType {
-		panic("[Semantic] tipo incompativel: esperava '" + existente.varType + "' mas recebeu '" + val.varType + "'")
+	if st.parent != nil {
+		st.parent.setter(nome, val)
+		return
 	}
-	st.table[nome] = Variable{value: val.value, varType: existente.varType, shift: existente.shift}
+	panic("[Semantic] variavel nao declarada: " + nome)
 }

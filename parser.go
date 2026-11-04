@@ -371,7 +371,7 @@ func (n *IdentifierOp) Evaluate(st SymbolTable) Variable {
 
 func (n *IdentifierOp) Generate(st *SymbolTable) {
 	v := st.getter(n.value)
-	CodeAppend(fmt.Sprintf("mov eax, [ebp-%d]", v.shift))
+	CodeAppend(fmt.Sprintf("mov eax, %s", v.Operand(n.value)))
 }
 
 // ─────────────────────────────────────────────
@@ -429,7 +429,7 @@ func (n *Assignment) Generate(st *SymbolTable) {
 	name := n.childrenLeft.(*IdentifierOp).value
 	n.childrenRight.Generate(st)
 	v := st.getter(name)
-	CodeAppend(fmt.Sprintf("mov [ebp-%d], eax", v.shift))
+	CodeAppend(fmt.Sprintf("mov %s, eax", v.Operand(name)))
 }
 
 // ─────────────────────────────────────────────
@@ -455,11 +455,13 @@ func (n *VarDec) Evaluate(st SymbolTable) Variable {
 func (n *VarDec) Generate(st *SymbolTable) {
 	name := n.children[0].(*IdentifierOp).value
 	st.createVariable(name, n.value)
-	CodeAppend("sub esp, 4")
+	v := st.getter(name)
+	if !v.isGlobal {
+		CodeAppend("sub esp, 4")
+	}
 	if len(n.children) > 1 {
 		n.children[1].Generate(st)
-		v := st.getter(name)
-		CodeAppend(fmt.Sprintf("mov [ebp-%d], eax", v.shift))
+		CodeAppend(fmt.Sprintf("mov %s, eax", v.Operand(name)))
 	}
 }
 
@@ -474,16 +476,316 @@ type Block struct {
 
 func (n *Block) Evaluate(st SymbolTable) Variable {
 	for _, child := range n.children {
-		child.Evaluate(st)
+		var res Variable
+		if b, ok := child.(*Block); ok {
+			newSt := SymbolTable{
+				table:  make(map[string]Variable),
+				parent: &st,
+			}
+			res = b.Evaluate(newSt)
+		} else {
+			res = child.Evaluate(st)
+		}
+		if res.isReturn {
+			return res
+		}
 	}
 	return Variable{value: 0, varType: "int"}
 }
 
 func (n *Block) Generate(st *SymbolTable) {
 	for _, child := range n.children {
-		child.Generate(st)
+		if b, ok := child.(*Block); ok {
+			blockSt := &SymbolTable{
+				table:        make(map[string]Variable),
+				parent:       st,
+				currentShift: st.currentShift,
+			}
+			b.Generate(blockSt)
+			st.currentShift = blockSt.currentShift
+		} else {
+			child.Generate(st)
+		}
 	}
 }
+
+// ─────────────────────────────────────────────
+// Return
+// ─────────────────────────────────────────────
+
+type Return struct {
+	id       int
+	children Node // expressão a ser retornada (pode ser nil)
+}
+
+func (n *Return) Evaluate(st SymbolTable) Variable {
+	if n.children == nil {
+		return Variable{value: nil, varType: "void", isReturn: true}
+	}
+	res := n.children.Evaluate(st)
+	res.isReturn = true
+	return res
+}
+
+func (n *Return) Generate(st *SymbolTable) {
+	if n.children != nil {
+		n.children.Generate(st)
+	}
+	CodeAppend("mov esp, ebp")
+	CodeAppend("pop ebp")
+	CodeAppend("ret")
+}
+
+// ─────────────────────────────────────────────
+// FuncDec
+// ─────────────────────────────────────────────
+
+type FuncDec struct {
+	id       int
+	value    string // tipo de retorno ("int", "bool", "" ou "void")
+	children []Node // [0]=IdentifierOp, [1..n]=VarDec, [n+1]=Block
+}
+
+func (n *FuncDec) Evaluate(st SymbolTable) Variable {
+	funcName := n.children[0].(*IdentifierOp).value
+	st.createFunction(funcName, n.value, n)
+	return Variable{value: nil, varType: "void", isFunc: false, isReturn: false}
+}
+
+func (n *FuncDec) Generate(st *SymbolTable) {
+	funcName := n.children[0].(*IdentifierOp).value
+	numParams := len(n.children) - 2
+
+	rootSt := st.getRoot()
+	funcSt := &SymbolTable{
+		table:        make(map[string]Variable),
+		parent:       rootSt,
+		currentShift: 0,
+	}
+
+	for i := 0; i < numParams; i++ {
+		paramVarDec := n.children[i+1].(*VarDec)
+		paramName := paramVarDec.children[0].(*IdentifierOp).value
+		paramType := paramVarDec.value
+		offset := 8 + 4*i
+		funcSt.createParam(paramName, paramType, offset)
+	}
+
+	CodeAppend(fmt.Sprintf("%s:", funcName))
+	CodeAppend("push ebp")
+	CodeAppend("mov ebp, esp")
+
+	body := n.children[len(n.children)-1]
+	body.Generate(funcSt)
+
+	// Epílogo de fallback (caso a função não termine com return explícito ou seja void)
+	CodeAppend("mov esp, ebp")
+	CodeAppend("pop ebp")
+	CodeAppend("ret")
+}
+
+// ─────────────────────────────────────────────
+// FuncCall
+// ─────────────────────────────────────────────
+
+type FuncCall struct {
+	id       int
+	value    string // nome da função
+	children []Node // expressões dos argumentos
+}
+
+func (n *FuncCall) Evaluate(st SymbolTable) Variable {
+	funcVar := st.getter(n.value)
+	if !funcVar.isFunc {
+		panic("[Semantic] identificador nao e uma funcao: " + n.value)
+	}
+	funcDec, ok := funcVar.value.(*FuncDec)
+	if !ok || funcDec == nil {
+		panic("[Semantic] definicao da funcao invalida: " + n.value)
+	}
+
+	numParams := len(funcDec.children) - 2
+	if len(n.children) != numParams {
+		panic(fmt.Sprintf("[Semantic] numero incorreto de argumentos para a funcao '%s': esperava %d, recebeu %d", n.value, numParams, len(n.children)))
+	}
+
+	evaluatedArgs := make([]Variable, len(n.children))
+	for i, argNode := range n.children {
+		evaluatedArgs[i] = argNode.Evaluate(st)
+	}
+
+	rootSt := st.getRoot()
+	funcSt := SymbolTable{
+		table:  make(map[string]Variable),
+		parent: rootSt,
+	}
+
+	for i := 0; i < numParams; i++ {
+		paramVarDec := funcDec.children[i+1].(*VarDec)
+		paramName := paramVarDec.children[0].(*IdentifierOp).value
+		paramType := paramVarDec.value
+		argVal := evaluatedArgs[i]
+
+		if argVal.varType != paramType {
+			panic(fmt.Sprintf("[Semantic] tipo incompativel no argumento '%s': esperava '%s', recebeu '%s'", paramName, paramType, argVal.varType))
+		}
+
+		funcSt.createVariable(paramName, paramType)
+		funcSt.setter(paramName, argVal)
+	}
+
+	body := funcDec.children[len(funcDec.children)-1].(*Block)
+	res := body.Evaluate(funcSt)
+
+	if funcDec.value != "" && funcDec.value != "void" {
+		if !res.isReturn {
+			panic("[Semantic] funcao com tipo de retorno nao retornou valor: " + n.value)
+		}
+		if res.varType != funcDec.value {
+			panic(fmt.Sprintf("[Semantic] tipo de retorno incompativel na funcao '%s': esperava '%s', recebeu '%s'", n.value, funcDec.value, res.varType))
+		}
+	} else {
+		if res.isReturn && res.varType != "void" && res.value != nil {
+			panic("[Semantic] funcao sem retorno (void) nao pode retornar valor: " + n.value)
+		}
+	}
+
+	res.isReturn = false
+	return res
+}
+
+func (n *FuncCall) Generate(st *SymbolTable) {
+	funcVar := st.getter(n.value)
+	if !funcVar.isFunc {
+		panic("[Semantic] identificador nao e uma funcao: " + n.value)
+	}
+	funcDec, ok := funcVar.value.(*FuncDec)
+	if !ok || funcDec == nil {
+		panic("[Semantic] definicao da funcao invalida: " + n.value)
+	}
+
+	numParams := len(funcDec.children) - 2
+	if len(n.children) != numParams {
+		panic(fmt.Sprintf("[Semantic] numero incorreto de argumentos para a funcao '%s': esperava %d, recebeu %d", n.value, numParams, len(n.children)))
+	}
+
+	// Avalia argumentos e empilha em ordem inversa (da direita para a esquerda)
+	// Para que o primeiro parâmetro fique em [ebp+8], segundo em [ebp+12], etc.
+	for i := len(n.children) - 1; i >= 0; i-- {
+		n.children[i].Generate(st)
+		CodeAppend("push eax")
+	}
+
+	CodeAppend(fmt.Sprintf("call %s", n.value))
+
+	if len(n.children) > 0 {
+		CodeAppend(fmt.Sprintf("add esp, %d", len(n.children)*4))
+	}
+}
+
+// ─────────────────────────────────────────────
+// Program
+// ─────────────────────────────────────────────
+
+type Program struct {
+	id       int
+	children []Node
+}
+
+func (n *Program) Evaluate(st SymbolTable) Variable {
+	var funcs []*FuncDec
+	var topLevelStmts []Node
+
+	for _, child := range n.children {
+		if fn, ok := child.(*FuncDec); ok {
+			funcs = append(funcs, fn)
+		} else {
+			topLevelStmts = append(topLevelStmts, child)
+		}
+	}
+
+	if len(funcs) == 0 {
+		var res Variable
+		for _, stmt := range n.children {
+			res = stmt.Evaluate(st)
+		}
+		return res
+	}
+
+	for _, fn := range funcs {
+		funcName := fn.children[0].(*IdentifierOp).value
+		st.createFunction(funcName, fn.value, fn)
+	}
+
+	for _, stmt := range topLevelStmts {
+		stmt.Evaluate(st)
+	}
+
+	mainVar := st.getter("main")
+	if !mainVar.isFunc {
+		panic("[Semantic] main nao e uma funcao")
+	}
+	mainCall := &FuncCall{
+		id:       newId(),
+		value:    "main",
+		children: []Node{},
+	}
+	return mainCall.Evaluate(st)
+}
+
+func (n *Program) Generate(st *SymbolTable) {
+	var funcs []*FuncDec
+	var topLevelStmts []Node
+
+	for _, child := range n.children {
+		if fn, ok := child.(*FuncDec); ok {
+			funcs = append(funcs, fn)
+		} else {
+			topLevelStmts = append(topLevelStmts, child)
+		}
+	}
+
+	if len(funcs) == 0 {
+		hasProgramFunctions = false
+		for _, stmt := range n.children {
+			stmt.Generate(st)
+		}
+		return
+	}
+
+	hasProgramFunctions = true
+
+	// Pass 1: Registrar todas as funções no SymbolTable raiz
+	var mainFunc *FuncDec
+	for _, fn := range funcs {
+		funcName := fn.children[0].(*IdentifierOp).value
+		st.createFunction(funcName, fn.value, fn)
+		if funcName == "main" {
+			mainFunc = fn
+		}
+	}
+
+	if mainFunc == nil {
+		panic("[Semantic] funcao main nao declarada")
+	}
+
+	// Pass 2: Gerar instruções de nível superior (variáveis globais) dentro de _start
+	isGeneratingFunc = false
+	for _, stmt := range topLevelStmts {
+		stmt.Generate(st)
+	}
+
+	// Chama a função main() a partir de _start
+	CodeAppend("call main")
+
+	// Pass 3: Gerar os procedimentos de cada função (fora de _start)
+	isGeneratingFunc = true
+	for _, fn := range funcs {
+		fn.Generate(st)
+	}
+	isGeneratingFunc = false
+}
+
 
 // ─────────────────────────────────────────────
 // NoOp
@@ -706,11 +1008,42 @@ func ParseFactor(lexer *Lexer) Node {
 		return inner
 	}
 
-	// Identificador
+	// Identificador ou Chamada de Função
 	if lexer.next.tipo == "IDEN" {
-		idVal := &IdentifierOp{id: newId(), value: lexer.next.value}
+		idName := lexer.next.value
 		lexer.selectNext()
-		return idVal
+
+		if lexer.next.tipo == "OPEN_PAR" {
+			lexer.selectNext()
+			args := []Node{}
+			if lexer.next.tipo != "CLOSE_PAR" {
+				for {
+					argExpr := ParseBoolExpression(lexer)
+					args = append(args, argExpr)
+					if lexer.next.tipo == "COMMA" {
+						lexer.selectNext()
+						if lexer.next.tipo == "CLOSE_PAR" {
+							panic("[PARSER] Esperava expressão após ',' na chamada de função")
+						}
+					} else if lexer.next.tipo == "CLOSE_PAR" {
+						break
+					} else {
+						panic("[PARSER] Esperava ',' ou ')' na chamada de função")
+					}
+				}
+			}
+			if lexer.next.tipo != "CLOSE_PAR" {
+				panic("[PARSER] Esperava ')' após argumentos da chamada de função")
+			}
+			lexer.selectNext()
+			return &FuncCall{
+				id:       newId(),
+				value:    idName,
+				children: args,
+			}
+		}
+
+		return &IdentifierOp{id: newId(), value: idName}
 	}
 
 	panic("[PARSER] token inesperado em factor: " + lexer.next.value)
@@ -860,6 +1193,94 @@ func parseBlock(lexer *Lexer) Node {
 }
 
 // ─────────────────────────────────────────────
+// parseFuncDeclaration
+// ─────────────────────────────────────────────
+
+func parseFuncDeclaration(lexer *Lexer) *FuncDec {
+	if lexer.next.tipo != "FUNC" {
+		panic("[PARSER] Esperava 'func'")
+	}
+	lexer.selectNext()
+
+	if lexer.next.tipo != "IDEN" {
+		panic("[PARSER] Esperava identificador após 'func'")
+	}
+	funcName := &IdentifierOp{id: newId(), value: lexer.next.value}
+	lexer.selectNext()
+
+	if lexer.next.tipo != "OPEN_PAR" {
+		panic("[PARSER] Esperava '(' após nome da função")
+	}
+	lexer.selectNext()
+
+	params := []Node{}
+	if lexer.next.tipo != "CLOSE_PAR" {
+		for {
+			if lexer.next.tipo != "IDEN" {
+				panic("[PARSER] Esperava identificador de parâmetro")
+			}
+			paramId := &IdentifierOp{id: newId(), value: lexer.next.value}
+			lexer.selectNext()
+
+			if lexer.next.tipo != "TYPE" {
+				panic("[PARSER] Esperava tipo após identificador do parâmetro")
+			}
+			paramType := lexer.next.value
+			lexer.selectNext()
+
+			params = append(params, &VarDec{
+				id:       newId(),
+				value:    paramType,
+				children: []Node{paramId},
+			})
+
+			if lexer.next.tipo == "COMMA" {
+				lexer.selectNext()
+				if lexer.next.tipo == "CLOSE_PAR" {
+					panic("[PARSER] Esperava parâmetro após ',' na declaração da função")
+				}
+			} else if lexer.next.tipo == "CLOSE_PAR" {
+				break
+			} else {
+				panic("[PARSER] Esperava ',' ou ')' na lista de parâmetros")
+			}
+		}
+	}
+
+	if lexer.next.tipo != "CLOSE_PAR" {
+		panic("[PARSER] Esperava ')' após lista de parâmetros")
+	}
+	lexer.selectNext()
+
+	returnType := ""
+	if lexer.next.tipo == "TYPE" {
+		returnType = lexer.next.value
+		lexer.selectNext()
+	}
+
+	if lexer.next.tipo == "END" {
+		panic("[PARSER] Esperava '{' na mesma linha após declaração da função")
+	}
+	if lexer.next.tipo != "OPEN_BRA" {
+		panic("[PARSER] Esperava '{' para iniciar o corpo da função")
+	}
+
+	body := parseBlock(lexer)
+
+	children := []Node{funcName}
+	for _, p := range params {
+		children = append(children, p)
+	}
+	children = append(children, body)
+
+	return &FuncDec{
+		id:       newId(),
+		value:    returnType,
+		children: children,
+	}
+}
+
+// ─────────────────────────────────────────────
 // parseStatement
 // ─────────────────────────────────────────────
 
@@ -871,6 +1292,19 @@ func parseStatement(lexer *Lexer) Node {
 
 	if lexer.next.tipo == "OPEN_BRA" {
 		return parseBlock(lexer)
+	}
+
+	// return [expr]
+	if lexer.next.tipo == "RETURN" {
+		lexer.selectNext()
+		var expr Node = nil
+		if lexer.next.tipo != "END" && lexer.next.tipo != "CLOSE_BRA" && lexer.next.tipo != "EOF" {
+			expr = ParseBoolExpression(lexer)
+		}
+		if lexer.next.tipo == "END" {
+			lexer.selectNext()
+		}
+		return &Return{id: newId(), children: expr}
 	}
 
 	// Declaração de variável: var <iden> <type> [= <expr>]
@@ -974,7 +1408,7 @@ func parseStatement(lexer *Lexer) Node {
 		return &While{id: newId(), condition: cond, block: blk}
 	}
 
-	// Atribuição: <iden> = <expr>
+	// Atribuição ou Chamada de Função
 	if lexer.next.tipo == "IDEN" {
 		idToken := lexer.next
 		lexer.selectNext()
@@ -993,7 +1427,41 @@ func parseStatement(lexer *Lexer) Node {
 			}
 			return assign
 		}
-		panic("[PARSER] Esperava '=' após identificador")
+
+		if lexer.next.tipo == "OPEN_PAR" {
+			lexer.selectNext()
+			args := []Node{}
+			if lexer.next.tipo != "CLOSE_PAR" {
+				for {
+					argExpr := ParseBoolExpression(lexer)
+					args = append(args, argExpr)
+					if lexer.next.tipo == "COMMA" {
+						lexer.selectNext()
+						if lexer.next.tipo == "CLOSE_PAR" {
+							panic("[PARSER] Esperava expressão após ',' na chamada de função")
+						}
+					} else if lexer.next.tipo == "CLOSE_PAR" {
+						break
+					} else {
+						panic("[PARSER] Esperava ',' ou ')' na chamada de função")
+					}
+				}
+			}
+			if lexer.next.tipo != "CLOSE_PAR" {
+				panic("[PARSER] Esperava ')' após argumentos da chamada de função")
+			}
+			lexer.selectNext()
+			if lexer.next.tipo == "END" {
+				lexer.selectNext()
+			}
+			return &FuncCall{
+				id:       newId(),
+				value:    idToken.value,
+				children: args,
+			}
+		}
+
+		panic("[PARSER] Esperava '=' ou '(' após identificador")
 	}
 
 	panic("[PARSER] Instrução inválida: " + lexer.next.value)
@@ -1003,8 +1471,8 @@ func parseStatement(lexer *Lexer) Node {
 // parseProgram
 // ─────────────────────────────────────────────
 
-func parseProgram(lexer *Lexer) *Block {
-	block := &Block{
+func parseProgram(lexer *Lexer) *Program {
+	prog := &Program{
 		id:       newId(),
 		children: []Node{},
 	}
@@ -1013,15 +1481,20 @@ func parseProgram(lexer *Lexer) *Block {
 			lexer.selectNext()
 			continue
 		}
+		if lexer.next.tipo == "FUNC" {
+			fn := parseFuncDeclaration(lexer)
+			prog.children = append(prog.children, fn)
+			continue
+		}
 		if lexer.next.tipo == "OPEN_BRA" {
-			block.children = append(block.children, parseBlock(lexer))
+			prog.children = append(prog.children, parseBlock(lexer))
 			continue
 		}
 		stmt := parseStatement(lexer)
-		block.children = append(block.children, stmt)
+		prog.children = append(prog.children, stmt)
 	}
 
-	return block
+	return prog
 }
 
 // ─────────────────────────────────────────────
